@@ -8,6 +8,7 @@
 #include "./blflow/wifi-manager.h"
 #include "./blflow/ssdp.h"
 #include "./blflow/indicator.h"
+#include "./blflow/home-assistant.h"
 
 int wifi_reconnect_count = 0;
 
@@ -57,6 +58,7 @@ void setup(){
     delay(500);
     start_ssdp();
     setupMqtt();
+    setupHomeAssistant();
 
     Serial.println();
     Serial.print(F("** BLLED Controller started "));
@@ -75,7 +77,8 @@ void loop(){
     if (globalVariables.started){
         mqttloop();
         webserverloop();
-        
+        homeAssistantLoop();
+
         if (WiFi.status() != WL_CONNECTED){
             Serial.print(F("Wifi connection dropped.  "));
             Serial.print(F("Wifi Status: ")); 

@@ -25,6 +25,10 @@ public:
         free(this->_buffer);
     }
 
+    // Owns its buffer, so a copy would free it twice.
+    AutoGrowBufferStream(const AutoGrowBufferStream &) = delete;
+    AutoGrowBufferStream &operator=(const AutoGrowBufferStream &) = delete;
+
     virtual size_t write(uint8_t byte) {
         if (this->_len + 1 > this->buffer_size) {
             auto tmp = (char*)realloc(this->_buffer, this->buffer_size + BUFFER_INCREMENTS);

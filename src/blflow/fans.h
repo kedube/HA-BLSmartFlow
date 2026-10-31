@@ -37,4 +37,12 @@ void fanloop(uint32_t now = millis()) {
     analogWrite(FanPower2, map(speed2, 0, 100, 0, 255));
 }
 
+// Run Settings that have already been saved to flash, from the web page or Home Assistant.
+void applySettings(PrinterConfig &&candidate) {
+    cancelChangedPostPrint(printerConfig, candidate);
+    printerConfig = std::move(candidate);
+    ++globalVariables.settingsRevision;
+    fanloop();
+}
+
 #endif

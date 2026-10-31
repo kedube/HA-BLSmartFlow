@@ -46,6 +46,13 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
         json["postPrintSeconds2"] = config.postPrint2.seconds;
         json["postPrintSpeed2"] = config.postPrint2.speed;
     }
+    json["haEnabled"] = config.haEnabled;
+    json["haHost"] = config.haHost;
+    json["haPort"] = config.haPort;
+    json["haUser"] = config.haUser;
+    json["haPassword"] = config.haPassword;
+    json["webUser"] = config.webUser;
+    json["webPassword"] = config.webPassword;
     if (json.overflowed()) {
         Serial.println(F("Not enough memory to save config"));
         return false;
@@ -143,6 +150,14 @@ void loadFileSystem(){
             }
         }
         if (!loaded.fansSynchronized) initializeSecondFan(loaded);
+        snprintf(loaded.haHost, sizeof(loaded.haHost), "%s", json["haHost"] | "");
+        snprintf(loaded.haUser, sizeof(loaded.haUser), "%s", json["haUser"] | "");
+        snprintf(loaded.haPassword, sizeof(loaded.haPassword), "%s", json["haPassword"] | "");
+        const int haPort = json["haPort"] | loaded.haPort;
+        if (haPort >= 1 && haPort <= 65535) loaded.haPort = haPort;
+        loaded.haEnabled = (json["haEnabled"] | false) && strlen(loaded.haHost) > 0;
+        snprintf(loaded.webUser, sizeof(loaded.webUser), "%s", json["webUser"] | "");
+        snprintf(loaded.webPassword, sizeof(loaded.webPassword), "%s", json["webPassword"] | "");
         printerConfig = std::move(loaded);
 
         Serial.println(F("Loaded config"));

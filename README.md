@@ -15,6 +15,7 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 - Per-fan following the reported speed of a printer fan
 - Per-fan Post Print timers with a chosen duration and speed
 - Separate animated fan indicators
+- Home Assistant monitoring and control over MQTT, with automatic discovery
 
 ### Changelog
 
@@ -34,7 +35,7 @@ To contribute to the Smartflow project, you'll need the following tools:
 ### Building and Running the Project
 1. Clone the repository to your local machine.
 2. Open the project folder in Visual Studio Code.
-3. Ensure that PlatformIO is installed and configured in your Visual Studio Code environment.
+3. Ensure that PlatformIO is installed and configured in your Visual Studio Code environment. `platformio.ini` pins the `espressif32@6.9.0` platform (Arduino-ESP32 2.0.17), because the ESP32SSDP library does not build on newer ones.
 4. Connect your Smartflow device ESP32 to your computer.
 6. Build the project by clicking on the PlatformIO icon in the sidebar and selecting "Build" from the available options.
 7. Once the build process is complete, upload the firmware to your device using the "Upload" option in PlatformIO.
@@ -94,6 +95,54 @@ During the timer, its speed takes priority over the normal mode, and **Post Prin
 **Synchronize Fans: On** applies Fan 1's Post Print settings and countdown to both outputs, retaining Fan 2's settings for later. Changing synchronization cancels active timers. Saving a change to a fan's Post Print settings cancels its current timer; failed saves leave it running. Older configurations default Post Print to Off, with editable defaults of 600 seconds and 100%.
 
 `/getOptions` and `/submitOptions` use `postPrint`, `postPrintSeconds`, and `postPrintSpeed`, with a `2` suffix for Fan 2. `/sensorData` returns `postPrintRemaining` and `postPrintRemaining2` as whole seconds rounded up, or zero when inactive. Synchronized outputs report the same remaining time.
+
+#### Home Assistant
+
+The controller can connect to your Home Assistant MQTT broker, such as the Mosquitto add-on with the MQTT integration. This is a second connection; the printer connection is unchanged. Under **Home Assistant** in Settings, switch on **Connect to MQTT Broker**, enter the broker host and port (usually 1883), add a username and password if the broker needs them, and save. The device appears as **BL Smart Flow+** under *Settings → Devices & services → MQTT* within a few seconds, and the status line in Settings shows whether it is connected. The connection is retried every 5 seconds at first, slowing to once a minute while the broker is unreachable.
+
+The saved password is never sent back to the web page. Leave the field blank to keep it, or clear the username to remove both. To prevent the saved password from being sent to a different broker, you must re-enter it when you change the broker host. Like the Wi-Fi password and printer access code, it is stored on the device in plain text.
+
+The connection is plain, unencrypted MQTT, so the broker password crosses your network in the clear; give the controller its own broker account. TLS is not supported because a second TLS session, alongside the printer's, leaves the ESP32 short of memory.
+
+| Entity | Type | Notes |
+| --- | --- | --- |
+| Nozzle temperature | Sensor | Temperature used by the fan curves, °C |
+| Fan 1 speed, Fan 2 speed | Sensor | Current output, % |
+| Fan 1/2 Post Print remaining | Sensor | Seconds, or 0 when inactive |
+| Printer connection | Binary sensor | Diagnostic; on while the printer MQTT connection is up |
+| Synchronize fans | Switch | Same as **Synchronize Fans** |
+| Fan 1/2 mode | Select | `Temperature Curve`, `Static Fan Speed`, or `Follow Printer Fan` |
+| Fan 1/2 static speed | Number | 0–100 %; used in `Static Fan Speed` mode |
+| Fan 1/2 printer fan | Select | Source for `Follow Printer Fan`; same labels as Settings |
+| Fan 1/2 Post Print | Switch | Same as **Post Print** |
+| Fan 1/2 Post Print duration, speed | Number | 1–86400 s and 0–100 % |
+
+Changes from Home Assistant follow the same rules as **Save** on the Settings page: each is checked, written to flash, then applied, and invalid values are ignored. Repeating the current value does not write to flash. While the fans are synchronized, Fan 1's entities control both outputs and Fan 2's controls are unavailable, keeping their settings for later; the Fan 2 speed sensor still reports the output. Curves are edited only on the Fan Graph page. An open Settings page reloads when Home Assistant changes a setting. If it has unsaved edits, it keeps them and warns that saving will replace the newer settings.
+
+Topics use `blsmartflow/<mac>`, where `<mac>` is the controller's lowercase MAC address without colons:
+
+| Topic | Payload |
+| --- | --- |
+| `blsmartflow/<mac>/status` | `online` or `offline`; retained, with `offline` as the last will |
+| `blsmartflow/<mac>/state` | Retained JSON with every entity's value, such as `fan1_speed` and `fan1_mode`; published within a second of a change |
+| `blsmartflow/<mac>/set/<field>` | Command for a control's `<field>`, such as `set/fan1_static_speed` with `42` or `set/synchronized` with `OFF` |
+| `blsmartflow/<mac>/fan2/availability` | `offline` while synchronized, otherwise `online` |
+
+Discovery configs are retained under `homeassistant/<component>/blsmartflow_<mac>/<field>/config` and republished when Home Assistant sends `online` to `homeassistant/status`. `/getOptions` and `/submitOptions` use `haEnabled`, `haHost`, `haPort`, `haUser`, and `haPassword`; `/getOptions` returns `haPasswordSet` instead of the password. `/getOptions` and `/sensorData` add `settingsRevision`, which increases when Settings change. `/sensorData` adds `homeAssistant` (`disabled`, `connecting`, `connected`, or `disconnected`) and `homeAssistantState`, the MQTT client's last connection state.
+
+#### Web Page Login and Firmware Updates
+
+Under **Web Page Login** in Settings, enter a username and password and save; your browser then asks for them. The login protects every page and request, including firmware updates. Until one is set, Settings warns that anyone on your network can change the settings or the firmware. Leave the password blank to keep it, or clear the username to remove the login. If you forget the login, run the USB Wi-Fi setup again, which clears it. The browser sends the login with every request over plain HTTP, so use a password you don't use elsewhere.
+
+Requests that change something, whether settings, curves, or firmware, must carry an `X-BLSmartFlow` header, which the controller's own pages send. Another website can't add a custom header without the browser first asking the controller, which never agrees. So another site can't change the controller through your browser, even if your browser has saved the login. Such requests receive 403.
+
+To update the firmware, choose **Update firmware** at the bottom of Settings, which opens `/update`, and upload `build/esp32dev/firmware-<version>.bin`. The login and header are checked before anything is written. The controller restarts only after a complete, valid update; otherwise it keeps running the current firmware. From a script, send both:
+
+```sh
+curl -u <user>:<password> -H 'X-BLSmartFlow: 1' -F firmware=@build/esp32dev/firmware-1.4.13.bin http://<controller-ip>/update
+```
+
+`/getOptions` and `/submitOptions` use `webUser` and `webPassword`; `/getOptions` returns `webPasswordSet` instead of the password.
 
 #### Tests
 

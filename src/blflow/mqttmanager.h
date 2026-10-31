@@ -8,6 +8,7 @@
 #include <ArduinoJson.h> 
 
 #include "AutoGrowBufferStream.h"
+#include "connect-timeout.h"
 #include "types.h"
 #include "mqtt-report.h"
 #include "fans.h"
@@ -21,7 +22,11 @@ String clientId = "BLLED-";
 
 AutoGrowBufferStream stream;
 
-unsigned long mqttattempt = (millis()-3000);
+// Each failed attempt blocks the loop, so retries slow down while the printer is off.
+const unsigned long mqttRetryMinimumMs = 3000;
+const unsigned long mqttRetryMaximumMs = 30000;
+unsigned long mqttRetryMs = 0; // Wait before the next attempt; grows while attempts fail
+unsigned long mqttattempt = 0;
 unsigned long lastMQTTupdate = millis();
 
 void ParseMQTTState(int code){
@@ -78,9 +83,13 @@ void connectMqtt(){
         //Abort MQTT connection attempt when no Wifi
         return;
     }
-    if (!mqttClient.connected() && (millis() - mqttattempt) >= 3000){   
+    if (!mqttClient.connected() && (millis() - mqttattempt) >= mqttRetryMs){
         Serial.println(F("Connecting to mqtt..."));
-        if (mqttClient.connect(clientId.c_str(),"bblp",printerConfig.accessCode)){
+        const bool connected = mqttClient.connect(clientId.c_str(),"bblp",printerConfig.accessCode);
+        // Measure the retry delay from the end of the attempt, which can block for seconds.
+        mqttattempt = millis();
+        if (connected){
+            mqttRetryMs = 0;
             Serial.print(F("MQTT connected, subscribing to MQTT Topic:  "));
             Serial.println(report_topic);
             mqttClient.subscribe(report_topic.c_str());
@@ -92,6 +101,7 @@ void connectMqtt(){
             }
             //Serial.println(F("Updating LEDs from MQTT connect"));
         }else{
+            mqttRetryMs = std::min(std::max(mqttRetryMs * 2, mqttRetryMinimumMs), mqttRetryMaximumMs);
             Serial.println(F("Failed to connect with error code: "));
             Serial.print(mqttClient.state());
             Serial.print(F("  "));
@@ -126,6 +136,9 @@ void setupMqtt(){
     report_topic = device_topic + String("/report");
 
     wifiSecureClient.setInsecure();
+    // Fail fast while the printer is off so the web page and Home Assistant stay responsive.
+    setConnectTimeout(wifiSecureClient, 3000);
+    wifiSecureClient.setHandshakeTimeout(10);
     mqttClient.setBufferSize(1024); //1024
     mqttClient.setServer(printerConfig.printerIP, 8883);
     mqttClient.setStream(stream);
@@ -152,9 +165,7 @@ void mqttloop(){
             Serial.println(F("MQTT dropped during mqttloop"));
             ParseMQTTState(mqttClient.state());
         }
-        delay(500);
         connectMqtt();
-        delay(32);
         return;
     }
     else{

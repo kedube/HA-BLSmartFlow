@@ -35,6 +35,22 @@ inline void initializeSecondFan(PrinterConfig &config) {
     }
 }
 
+// One output's mode settings. Fan 2's are dormant while the fans are synchronized.
+struct FanSettings {
+    bool &staticEnabled;
+    int &staticSpeed;
+    bool &followPrinterFan;
+    PrinterFanSource &printerFanSource;
+    PostPrintSettings &postPrint;
+};
+
+inline FanSettings fanSettings(PrinterConfig &config, int fan) {
+    if (fan == 1) return {config.staticFan2, config.staticFanSpeed2, config.followPrinterFan2,
+                          config.printerFanSource2, config.postPrint2};
+    return {config.staticFan, config.staticFanSpeed, config.followPrinterFan,
+            config.printerFanSource, config.postPrint};
+}
+
 inline void readPostPrintSettings(JsonVariantConst enabled, JsonVariantConst seconds,
                                   JsonVariantConst speed, PostPrintSettings &settings) {
     // Missing fields in older files keep the feature off. Invalid values cannot

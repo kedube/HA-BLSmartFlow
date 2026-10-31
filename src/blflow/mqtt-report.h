@@ -5,16 +5,7 @@
 #include "types.h"
 #include "post-print.h"
 
-// MQTT uses both JSON numbers and decimal strings. Reject malformed values
-// rather than converting them to zero and unexpectedly stopping an output.
-inline bool readUnsignedReport(JsonVariantConst value, uint32_t maximum, uint32_t &result) {
-    if (value.is<uint32_t>()) {
-        const uint32_t number = value.as<uint32_t>();
-        if (number > maximum) return false;
-        result = number;
-        return true;
-    }
-    const char *text = value.as<const char *>();
+inline bool readUnsignedText(const char *text, uint32_t maximum, uint32_t &result) {
     if (!text || !*text) return false;
     uint32_t number = 0;
     for (; *text; ++text) {
@@ -26,6 +17,18 @@ inline bool readUnsignedReport(JsonVariantConst value, uint32_t maximum, uint32_
     if (number > maximum) return false;
     result = number;
     return true;
+}
+
+// MQTT uses both JSON numbers and decimal strings. Reject malformed values
+// rather than converting them to zero and unexpectedly stopping an output.
+inline bool readUnsignedReport(JsonVariantConst value, uint32_t maximum, uint32_t &result) {
+    if (value.is<uint32_t>()) {
+        const uint32_t number = value.as<uint32_t>();
+        if (number > maximum) return false;
+        result = number;
+        return true;
+    }
+    return readUnsignedText(value.as<const char *>(), maximum, result);
 }
 
 inline void recordPrinterFan(int fan, uint32_t raw, uint32_t scale) {

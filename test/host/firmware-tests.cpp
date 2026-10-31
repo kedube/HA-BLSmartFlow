@@ -26,6 +26,20 @@ void reset() {
     mqttClient.connectResult = mqttClient.dropDuringLoop = false;
     mqttClient.beforeConnect = {};
     mqttattempt = 0;
+    mqttRetryMs = 0;
+    haMqtt = PubSubClient(haClient);
+    haMqtt.isConnected = false;
+    haLastState = haNodeId = haBaseTopic = "";
+    haLastFan2Online = -1;
+    haConfigured = haAttempted = haDiscoveryPending = haStatePending = false;
+    haLastAttempt = haRetryMs = haLastStateCheck = 0;
+    webServer.headers.clear();
+    webServer.credentials = {};
+    webServer.authenticationRequests = 0;
+    webServer.upload() = HTTPUpload{};
+    Update = UpdateMock{};
+    updateAccepted = false;
+    ESP.restarts = 0;
 }
 void putConfig(const std::string &json) {
     LittleFS.files[configPath] = std::make_shared<std::string>(json);
@@ -43,6 +57,7 @@ bool report(const char *json) {
 }
 int options(std::map<std::string,String> params) {
     webServer.params = std::move(params);
+    webServer.headers[ownPageHeader] = "1";
     webServer.responses.clear();
     submitOptions();
     assert(webServer.responses.size() == 1);
@@ -50,6 +65,7 @@ int options(std::map<std::string,String> params) {
 }
 int curve(const char *json, const char *fan = nullptr) {
     webServer.params = {{"points", json}};
+    webServer.headers[ownPageHeader] = "1";
     if (fan) webServer.params["fan"] = fan;
     webServer.responses.clear();
     handleUpdateFanConfig();
@@ -81,9 +97,13 @@ template<class T> void check(const char *name, T test) {
 }
 
 #include "post-print-tests.h"
+#include "home-assistant-tests.h"
+#include "web-security-tests.h"
 
 int main() {
     postPrintTests();
+    homeAssistantTests();
+    webSecurityTests();
     check("legacy settings leave following disabled", [] {
         putConfig(legacyConfig); reboot();
         assert(!printerConfig.followPrinterFan && !printerConfig.followPrinterFan2);

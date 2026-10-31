@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BL Smart Flow+</title>
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
-  <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
     :root {
       --color-black: black;
@@ -113,7 +113,13 @@
     .printer-information { margin: 1rem 0 1.5rem; }
     .printer-information h2 { margin-bottom: 1.25rem; }
     .printer-option-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 18rem); align-items: center; gap: .5rem 1rem; margin: .75rem 0; }
-    .printer-option-row input[type=text] { width: 100%; min-width: 0; padding: .45rem .6rem; margin: 0; font-family: inherit; font-size: revert; }
+    .printer-option-row input[type=text], .printer-option-row input[type=password], .printer-option-row input[type=number] { width: 100%; min-width: 0; padding: .45rem .6rem; margin: 0; font-family: inherit; font-size: revert; }
+    .printer-option-row input[type=password], .printer-option-row input[type=number] { border: 1px solid #ccc; border-radius: 5px; }
+    .home-assistant, .web-login { margin: 1.5rem 0; }
+    .ha-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+    .field-help { font-size: .85rem; color: #555; margin: .5rem 0; }
+    #login-status.unprotected { color: var(--color-error); font-weight: bold; }
+    #firmwareversion a { color: inherit; }
     .fan-features { margin: 1rem 0; }
     .fan-option-row { display: grid; grid-template-columns: 60px minmax(0, 1fr) max-content; align-items: center; gap: .5rem .75rem; margin: .75rem 0; }
     .fan-option-row > label[for], .printer-option-row > label { width: auto; min-width: 0; font-size: 1.1475rem; }
@@ -130,7 +136,7 @@
       .fan-option-row { grid-template-columns: 60px minmax(0, 1fr); }
       .fan-parameters { grid-column: 1 / -1; max-width: 100%; }
     }
-    #settings-status, #curve-status, #mode-status { margin: .6rem 0; font-size: .9rem; }
+    #settings-status, #curve-status, #mode-status, #ha-status { margin: .6rem 0; font-size: .9rem; }
     #save-notice {
       position: fixed;
       top: 1.5rem;
@@ -565,6 +571,51 @@
             </div>
           </section>
 
+          <section class="home-assistant">
+            <h2>Home Assistant</h2>
+            <div class="fan-option-row">
+              <label class="switch">
+                <input type="checkbox" id="haEnabled" name="haEnabled" role="switch" aria-label="Home Assistant MQTT On/Off">
+                <span class="slider round"></span>
+              </label>
+              <label for="haEnabled">Connect to MQTT Broker</label>
+            </div>
+            <p id="ha-status" role="status"></p>
+            <fieldset id="haFields" class="ha-fields" hidden disabled>
+              <div class="printer-option-row">
+                <label for="haHost">Broker Host</label>
+                <input type='text' id='haHost' name='haHost' maxlength='64' placeholder='homeassistant.local' title='Host name or IP address of your MQTT broker'>
+              </div>
+              <div class="printer-option-row">
+                <label for="haPort">Broker Port</label>
+                <input type="number" id="haPort" name="haPort" min="1" max="65535" step="1" value="1883" required>
+              </div>
+              <div class="printer-option-row">
+                <label for="haUser">Username</label>
+                <input type='text' id='haUser' name='haUser' maxlength='64' autocomplete='off'>
+              </div>
+              <div class="printer-option-row">
+                <label for="haPassword">Password</label>
+                <input type="password" id="haPassword" name="haPassword" maxlength="64" autocomplete="new-password">
+              </div>
+              <p class="field-help">Fan controls and sensors appear in Home Assistant through MQTT Discovery. The connection is not encrypted, so give the controller its own broker account.</p>
+            </fieldset>
+          </section>
+
+          <section class="web-login">
+            <h2>Web Page Login</h2>
+            <p id="login-status" class="field-help"></p>
+            <div class="printer-option-row">
+              <label for="webUser">Username</label>
+              <input type='text' id='webUser' name='webUser' maxlength='32' autocomplete='username'>
+            </div>
+            <div class="printer-option-row">
+              <label for="webPassword">Password</label>
+              <input type="password" id="webPassword" name="webPassword" maxlength="64" autocomplete="new-password">
+            </div>
+            <p class="field-help">Leave the password blank to keep the saved one, or clear the username to remove the login. If you forget it, run the USB Wi-Fi setup again, which clears the login.</p>
+          </section>
+
           <h2>Debugging</h2>
           <div class="fan-option-row">
             <label class="switch">
@@ -592,7 +643,7 @@
         </form>
       </div>
     </div>
-    <p id="firmwareversion">Firmware Version: Loading...</p>
+    <p id="firmwareversion"><span id="firmwareversionText">Firmware Version: Loading...</span> · <a href="/update">Update firmware</a></p>
   </div> <!-- .container -->
   <div id="save-notice" role="status" aria-live="polite" hidden></div>
 
@@ -618,6 +669,17 @@
     let creatingPoint = false;
     let myChart = null;
     let saveNoticeTimer;
+    let settingsRevision = null;
+    let settingsDirty = false;
+    // The controller accepts changes only from its own pages, which send this header.
+    const ownPageHeader = 'X-BLSmartFlow';
+    const haProblems = {
+      3: 'the broker is unavailable. Retrying.',
+      4: 'the broker rejected the username or password.',
+      5: 'the broker rejected the username or password.',
+      '-2': 'the broker could not be reached. Check the host and port.',
+      '-4': 'the broker did not respond in time. Retrying.'
+    };
 
     function hideSaveNotice() {
       clearTimeout(saveNoticeTimer);
@@ -702,10 +764,38 @@
       updateControls();
     }
 
+    function renderHomeAssistant() {
+      // Disabled while hidden, so its fields are neither validated nor sent and the saved values stay.
+      $('haFields').hidden = $('haFields').disabled = !$('haEnabled').checked;
+    }
+
+    function renderLoginStatus(protectedPages) {
+      $('login-status').textContent = protectedPages ? 'This page and its settings require the login below.'
+        : 'No login is set, so anyone on your network can change these settings or the firmware.';
+      $('login-status').className = 'field-help' + (protectedPages ? '' : ' unprotected');
+    }
+
+    function renderHomeAssistantStatus(status, state) {
+      $('ha-status').textContent = status === 'connected' ? 'Connected to the broker.'
+        : status === 'connecting' ? 'Connecting to the broker...'
+        : status === 'disconnected' ? 'Not connected: ' + (haProblems[state] || 'retrying.')
+        : '';
+    }
+
     function markSettingsChanged() {
       if (!optionsLoaded || optionsSaving) return;
+      settingsDirty = true;
       $('settings-status').textContent = 'Unsaved settings. Save to apply.';
       updateControls();
+    }
+
+    // Home Assistant or another page may change settings while this one is open.
+    function checkSettingsRevision(revision) {
+      if (revision === undefined || settingsRevision === null || revision === settingsRevision ||
+          !optionsLoaded || optionsSaving) return;
+      if (!settingsDirty) { updateOptions(); return; }
+      $('settings-status').textContent =
+        'Settings were changed elsewhere, such as in Home Assistant. Saving replaces those changes; reload this page to see them first.';
     }
 
     function updateOptions() {
@@ -727,7 +817,7 @@
             loadFailed(); return;
           }
         } catch (error) { loadFailed(); return; }
-        $('firmwareversion').textContent = 'Firmware Version: ' + (config.firmwareversion || 'Unknown version');
+        $('firmwareversionText').textContent = 'Firmware Version: ' + (config.firmwareversion || 'Unknown version');
         $('printerip').value = config.ip;
         $('printercode').value = config.code;
         $('printerserial').value = config.id;
@@ -756,6 +846,21 @@
           $('postPrintSpeed' + suffix).value = config['postPrintSpeed' + sourceSuffix] ?? 100;
         }
         for (const name of ['debuging', 'debugingchange', 'mqttdebug']) $(name).checked = config[name] === true;
+        $('haEnabled').checked = config.haEnabled === true;
+        $('haHost').value = config.haHost || '';
+        $('haPort').value = config.haPort || 1883;
+        $('haUser').value = config.haUser || '';
+        // The firmware never sends the saved password.
+        $('haPassword').value = '';
+        $('haPassword').placeholder = config.haPasswordSet ? 'Saved; leave blank to keep' : '';
+        renderHomeAssistant();
+        // Like the broker password, the login password is never sent.
+        $('webUser').value = config.webUser || '';
+        $('webPassword').value = '';
+        $('webPassword').placeholder = config.webPasswordSet ? 'Saved; leave blank to keep' : '';
+        renderLoginStatus(Boolean(config.webUser) && config.webPasswordSet === true);
+        settingsRevision = config.settingsRevision ?? null;
+        settingsDirty = false;
         optionsLoaded = true;
         $('settings-status').textContent = '';
         renderOperatingMode();
@@ -776,6 +881,7 @@
       parameters.set('staticfan', $('staticfan').checked ? 'on' : 'off');
       parameters.set('followPrinterFan', $('followPrinterFan').checked ? 'on' : 'off');
       parameters.set('postPrint', $('postPrint').checked ? 'on' : 'off');
+      parameters.set('haEnabled', $('haEnabled').checked ? 'on' : 'off');
       if (!$('fansSynchronized').checked) {
         parameters.set('staticfan2', $('staticfan2').checked ? 'on' : 'off');
         parameters.set('followPrinterFan2', $('followPrinterFan2').checked ? 'on' : 'off');
@@ -807,6 +913,7 @@
       };
       xhr.open('POST', '/submitOptions', true);
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+      xhr.setRequestHeader(ownPageHeader, '1');
       xhr.timeout = 30000;
       xhr.onerror = () => saveFailed();
       xhr.ontimeout = () => saveFailed();
@@ -920,7 +1027,8 @@
       try {
         const body = new URLSearchParams({ fan: String(fan + 1), points: JSON.stringify({ points: candidate }) });
         const response = await fetch('/updateFanConfig', {
-          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString()
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', [ownPageHeader]: '1' },
+          body: body.toString()
         });
         if (!response.ok) throw new Error(await response.text() || 'Unable to save curve.');
         curves[fan] = candidate;
@@ -957,6 +1065,8 @@
         setSpin(2, speed2);
         postPrintRemaining = [sensor.postPrintRemaining || 0, sensor.postPrintRemaining2 || 0];
         renderFanSources();
+        renderHomeAssistantStatus(sensor.homeAssistant, sensor.homeAssistantState);
+        checkSettingsRevision(sensor.settingsRevision);
       } catch (error) {
         postPrintRemaining = [0, 0];
         renderFanSources();
@@ -978,6 +1088,7 @@
       markSettingsChanged();
     });
     $('settings-form').addEventListener('input', markSettingsChanged);
+    $('haEnabled').addEventListener('change', () => { renderHomeAssistant(); markSettingsChanged(); });
     for (const suffix of ['', '2']) {
       $('postPrint' + suffix).addEventListener('change', markSettingsChanged);
       for (const [name, other] of [['staticfan', 'followPrinterFan'], ['followPrinterFan', 'staticfan']]) {

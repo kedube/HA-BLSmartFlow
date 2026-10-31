@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.13 — 2026-10-31
+
+- Added **Home Assistant** monitoring and control over a second MQTT connection, to your broker. MQTT Discovery creates sensors for nozzle temperature, both fan speeds, Post Print countdowns, and the printer connection, plus controls for synchronization and each fan's mode, static speed, printer fan source, and Post Print settings.
+- Home Assistant changes are validated, written to flash, then applied, like **Save**. Fan 2's controls are unavailable while the fans are synchronized. The connection reports offline through its last will, and it republishes discovery when Home Assistant restarts.
+- The broker password is never sent to the web page. It must be re-entered after you change the broker host. The connection is plain MQTT; TLS is not supported, because a second TLS session leaves the ESP32 short of memory.
+- Added an optional **Web Page Login** that protects every page and request, including firmware updates. Settings warns while no login is set, and the USB Wi-Fi setup clears a forgotten login.
+- Requests that change settings, curves, or firmware must now come from the controller's own pages, so another website can no longer change or re-flash the controller through your browser.
+- Firmware updates now check the login before writing anything, keep the current firmware running after a failed or interrupted update, and show the result. The update page is now served at `/update`, linked from Settings.
+- An open Settings page now reloads when settings change elsewhere, and it warns instead of discarding unsaved edits.
+- Fixed the status LED's blink pattern pausing the controller for up to two seconds on every pass while the printer was unreachable, which delayed web requests.
+- Printer reconnects no longer run on every pass. They are retried every 3 seconds at first, slowing to every 30 seconds, and each attempt stops after 3 seconds instead of 30.
+- Fixed Wi-Fi setup over USB: 63-character passwords and 32-character SSIDs were truncated, overlong fields could overflow memory, and a missing field could crash the controller. The Wi-Fi password and access code are no longer echoed into the setup log.
+- The controller no longer halts with its fans off if the `.local` name service fails to start.
+- Pinned Chart.js to version 4, so a future major release cannot break the Fan Graph.
+- Generated web page headers no longer change with the build machine's Python version.
+- Pinned the build to the `espressif32@6.9.0` platform (Arduino-ESP32 2.0.17), because the ESP32SSDP library does not build on newer platforms.
+
 ## 1.3.12 — 2026-10-23
 
 - Made fan settings percentage fields compact for three digits and Post Print duration fields for four digits, with room for the number controls. Changed the duration label from "s" to "seconds".

@@ -24,13 +24,15 @@ extern "C"
     PrinterVariables printerVariables;
 
     typedef struct GlobalVariablesStruct{
-        char SSID[32];
-        char APPW[63];
+        char SSID[33];                  // 32-character SSID plus terminator
+        char APPW[64];                  // 63-character WPA2 passphrase plus terminator
         String FWVersion = "Stable " STRVERSION " (" STRBUILDDATE ")";
         String Host = "BLFLOW";
         bool started = false;
         int fanSpeed = 0;
         int fanSpeed2 = 0;
+        // Increments when Settings change, so open web pages can reload them.
+        uint32_t settingsRevision = 0;
     } GlobalVariables;
     GlobalVariables globalVariables;
 
@@ -63,6 +65,17 @@ extern "C"
         FanCurve fanGraph = defaultFanCurve();
         // Empty until independent settings are first saved; then retained in sync mode.
         FanCurve fanGraph2;
+
+        // Home Assistant MQTT broker; a separate connection from the printer's.
+        bool haEnabled = false;
+        char haHost[65] = "";
+        int haPort = 1883;
+        char haUser[65] = "";
+        char haPassword[65] = "";
+
+        // Web page login; both empty leaves the pages open.
+        char webUser[33] = "";
+        char webPassword[65] = "";
 
     } PrinterConfig;
     PrinterConfig printerConfig;

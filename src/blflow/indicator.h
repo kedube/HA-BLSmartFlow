@@ -4,7 +4,6 @@
 #include "types.h"
 #include <Arduino.h>
 
-unsigned long previousMillis = 0;
 const int baseInterval = 200;
 const int LED_PIN = 21;
 
@@ -34,14 +33,12 @@ void indicatorloop() {
             return;
         }
 
-        for (int i = 0; i < blinkTimes; i++) {
-            digitalWrite(LED_PIN, HIGH);
-            delay(baseInterval);
-            digitalWrite(LED_PIN, LOW);
-            delay(baseInterval);
-        }
-
-        delay(baseInterval * 4);
+        // Derive the pattern from the clock rather than delay(), which would stall
+        // the web server and MQTT for up to two seconds on every pass.
+        const unsigned long blinkPeriod = 2 * baseInterval;
+        const unsigned long phase = millis() % (blinkTimes * blinkPeriod + baseInterval * 4);
+        const bool lit = phase < blinkTimes * blinkPeriod && phase % blinkPeriod < baseInterval;
+        digitalWrite(LED_PIN, lit ? HIGH : LOW);
     }else{
         digitalWrite(LED_PIN, HIGH);
     }

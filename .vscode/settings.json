@@ -68,5 +68,8 @@
         "cinttypes": "cpp",
         "typeinfo": "cpp"
     },
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": false,
+    // Each firmware build writes its version to platformio.ini. Rebuilding the index on that
+    // change would delete the build directory while the build is still running.
+    "platformio-ide.autoRebuildAutocompleteIndex": false
 }

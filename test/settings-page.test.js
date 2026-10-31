@@ -39,7 +39,7 @@ function loadPage({ chartAvailable = true } = {}) {
   class XMLHttpRequest {
     constructor() { requests.push(this); }
     open(method, url) { this.method = method; this.url = url; }
-    setRequestHeader() {}
+    setRequestHeader(name, value) { (this.headers ||= {})[name] = value; }
     send(body) { this.body = body; }
     respond(status, body) {
       this.status = status; this.responseText = body; this.readyState = 4;
@@ -115,7 +115,7 @@ test('settings load without waiting for external images or the chart library', (
   assert.equal(page.get('debuging').checked, true);
   assert.equal(page.get('saveOptions').disabled, false);
   assert.equal(page.get('settings-status').textContent, '');
-  assert.ok(page.get('firmwareversion').textContent.includes(baseConfig.firmwareversion));
+  assert.ok(page.get('firmwareversionText').textContent.includes(baseConfig.firmwareversion));
   page.events.DOMContentLoaded();
   assert.match(page.get('curve-status').textContent, /chart could not load/i);
   assert.equal(page.get('createPointBtn').disabled, true);
@@ -580,4 +580,140 @@ test('failed telemetry clears stale countdowns and pending polls cannot pile up'
   page.context.fetchSensorData();
   await page.respond('/sensorData', { temp: 20, speed: 100, speed2: 100, postPrintRemaining: 8, postPrintRemaining2: 8 });
   assert.equal(page.get('fan1Source').textContent, 'Post Print: 8s');
+});
+
+const haConfig = {
+  ...baseConfig, haEnabled: true, haHost: 'homeassistant.local', haPort: 1884, haUser: 'mqtt-user',
+  haPasswordSet: true, settingsRevision: 3,
+};
+
+test('Home Assistant settings load without the saved password and save explicit switch values', async () => {
+  const page = await readyPage(haConfig);
+  assert.equal(page.get('haEnabled').checked, true);
+  assert.equal(page.get('haFields').hidden, false);
+  assert.equal(page.get('haHost').value, 'homeassistant.local');
+  assert.equal(page.get('haPort').value, 1884);
+  assert.equal(page.get('haUser').value, 'mqtt-user');
+  assert.equal(page.get('haPassword').value, '');
+  assert.match(page.get('haPassword').placeholder, /leave blank to keep/i);
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('haEnabled'), 'on');
+  assert.equal(body.has('haTls'), false);
+  assert.equal(body.get('haHost'), 'homeassistant.local');
+  assert.equal(body.get('haPort'), '1884');
+  assert.equal(body.get('haUser'), 'mqtt-user');
+  assert.equal(body.get('haPassword'), '');
+  page.requests[1].respond(200, 'Settings saved');
+  page.requests[2].respond(200, JSON.stringify({ ...haConfig, haPasswordSet: false }));
+  assert.equal(page.get('haPassword').placeholder, '');
+});
+
+test('older firmware leaves Home Assistant off, and turning it off disables the broker fields', async () => {
+  let page = await readyPage();
+  assert.equal(page.get('haEnabled').checked, false);
+  assert.equal(page.get('haFields').hidden, true);
+  assert.equal(page.get('haFields').disabled, true);
+  assert.equal(page.get('haPort').value, 1883);
+  page = await readyPage({ ...haConfig, haEnabled: false, haPort: 1883 });
+  assert.equal(page.get('haHost').value, 'homeassistant.local');
+  page.get('haEnabled').checked = true;
+  page.trigger('haEnabled', 'change');
+  assert.equal(page.get('haFields').hidden, false);
+  assert.equal(page.get('haFields').disabled, false);
+  assert.match(page.get('settings-status').textContent, /unsaved/i);
+  page.get('haEnabled').checked = false;
+  page.trigger('haEnabled', 'change');
+  // A disabled fieldset is neither validated nor submitted, so the firmware keeps the saved broker.
+  assert.equal(page.get('haFields').hidden, true);
+  assert.equal(page.get('haFields').disabled, true);
+  assert.equal(page.get('haHost').value, 'homeassistant.local');
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('haEnabled'), 'off');
+});
+
+test('the broker connection status updates with telemetry', async () => {
+  const page = await readyPage(haConfig);
+  for (const [status, state, expected] of [
+    ['connected', 0, /^Connected to the broker\.$/], ['connecting', -1, /^Connecting/],
+    ['disconnected', 4, /rejected the username or password/], ['disconnected', 5, /rejected the username or password/],
+    ['disconnected', -2, /could not be reached/], ['disconnected', -3, /^Not connected: retrying\.$/],
+    ['disabled', -1, /^$/], [undefined, undefined, /^$/],
+  ]) {
+    const polling = page.context.fetchSensorData();
+    await page.respond('/sensorData', { temp: 20, speed: 0, speed2: 0, homeAssistant: status, homeAssistantState: state });
+    await polling;
+    assert.match(page.get('ha-status').textContent, expected);
+  }
+});
+
+test('settings changed elsewhere reload a clean page and warn before overwriting edits', async () => {
+  const sensor = revision => ({ temp: 20, speed: 0, speed2: 0, settingsRevision: revision });
+  const page = await readyPage({ ...baseConfig, settingsRevision: 5 });
+  let polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', sensor(5)); await polling;
+  assert.equal(page.requests.length, 1, 'An unchanged revision does not reload');
+  polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', sensor(6)); await polling;
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.requests[1].url, '/getOptions');
+  polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', sensor(6)); await polling;
+  assert.equal(page.requests.length, 2, 'No second reload while one is loading');
+  page.requests[1].respond(200, JSON.stringify({ ...baseConfig, staticfans: true, staticfanspeed: 64, settingsRevision: 6 }));
+  await page.respond('/getFanConfig', { points: points1, points2, fansSynchronized: true });
+  assert.equal(page.get('staticfan').checked, true);
+  assert.equal(page.get('staticfanspeed').value, 64);
+  page.get('staticfanspeed').value = '20';
+  page.trigger('settings-form', 'input');
+  polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', sensor(7)); await polling;
+  assert.equal(page.requests.length, 2, 'Unsaved edits are not discarded');
+  assert.match(page.get('settings-status').textContent, /changed elsewhere/i);
+  assert.equal(page.get('staticfanspeed').value, '20');
+  page.context.submitOptions({ preventDefault() {} });
+  assert.equal(new URLSearchParams(page.requests[2].body).get('staticfanspeed'), '20');
+  page.requests[2].respond(200, 'Settings saved');
+  page.requests[3].respond(200, JSON.stringify({ ...baseConfig, staticfans: true, staticfanspeed: 20, settingsRevision: 8 }));
+  assert.equal(page.state('settingsRevision'), 8);
+  assert.equal(page.state('settingsDirty'), false);
+  assert.equal(page.get('settings-status').textContent, '');
+});
+
+test('changes are sent with the header that marks the controller\'s own pages', async () => {
+  const page = await readyPage();
+  page.context.submitOptions({ preventDefault() {} });
+  assert.equal(page.requests[1].headers['X-BLSmartFlow'], '1');
+  page.requests[1].respond(200, 'Settings saved');
+  page.requests[2].respond(200, JSON.stringify(baseConfig));
+  await page.respond('/getFanConfig', { points: points1, points2, fansSynchronized: true });
+  page.context.saveCurve(points1);
+  assert.equal(page.pending('/updateFanConfig').options.headers['X-BLSmartFlow'], '1');
+  for (const url of ['/getOptions', '/getFanConfig', '/sensorData']) {
+    assert.ok([...page.requests, ...page.fetches].some(request => request.url === url), `Requested ${url}`);
+  }
+});
+
+test('the login section warns while unprotected and never shows the saved password', async () => {
+  let page = await readyPage();
+  assert.match(page.get('login-status').textContent, /anyone on your network/i);
+  assert.match(page.get('login-status').className, /unprotected/);
+  assert.equal(page.get('webUser').value, '');
+  assert.equal(page.get('webPassword').placeholder, '');
+  page = await readyPage({ ...baseConfig, webUser: 'admin', webPasswordSet: true });
+  assert.match(page.get('login-status').textContent, /require the login/i);
+  assert.doesNotMatch(page.get('login-status').className, /unprotected/);
+  assert.equal(page.get('webUser').value, 'admin');
+  assert.equal(page.get('webPassword').value, '');
+  assert.match(page.get('webPassword').placeholder, /leave blank to keep/i);
+  page.get('webPassword').value = 'new password';
+  page.trigger('settings-form', 'input');
+  page.context.submitOptions({ preventDefault() {} });
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('webUser'), 'admin');
+  assert.equal(body.get('webPassword'), 'new password');
+  page.requests[1].respond(200, 'Settings saved');
+  page.requests[2].respond(200, JSON.stringify({ ...baseConfig, webUser: 'admin', webPasswordSet: true }));
+  assert.equal(page.get('webPassword').value, '');
 });

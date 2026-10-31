@@ -197,7 +197,7 @@ void scanNetwork()
             delay(10);
         }
         Serial.println();
-        if(printerConfig.BSSID == bestBSSID.c_str()){
+        if(strcmp(printerConfig.BSSID, bestBSSID.c_str()) == 0){
                 Serial.print(F("BSSID already set to: "));
                 Serial.print(printerConfig.BSSID);
         }

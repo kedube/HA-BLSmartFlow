@@ -38,7 +38,9 @@ def compress_and_generate_entry(input_file):
     # Compress in-memory, no temp file
     with open(input_file, "rb") as infile:
         data = infile.read()
-        compressed_data = gzip.compress(data, compresslevel=9, mtime=0)
+        compressed_data = bytearray(gzip.compress(data, compresslevel=9, mtime=0))
+        # Newer Pythons record the build machine's OS; use "unknown" so headers are reproducible.
+        compressed_data[9] = 0xFF
 
     # ------------ Generate a C array name based on the file name ------------ #
     # array_name = os.path.basename(input_file).replace(".", "_")

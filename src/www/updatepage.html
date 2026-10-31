@@ -136,6 +136,7 @@
                 <button id="button-send" class="button-send" type="submit" disabled>Update</button>
             </form>
             <p class="status-text" id="status">Status: Ready</p>
+            <p><a href="/">Back to Settings</a></p>
             <script type="application/javascript">
                 function _(el) {
                     return document.getElementById(el);
@@ -151,9 +152,9 @@
                     ajax.addEventListener("loadstart", startHandler, false);
                     ajax.addEventListener("error", errorHandler, false);
                     ajax.addEventListener("abort", abortHandler, false);
-                    ajax.open("POST", "/update"); 
-                    ajax.setRequestHeader('Access-Control-Allow-Headers', '*');
-                    ajax.setRequestHeader('Access-Control-Allow-Origin', '*');
+                    ajax.open("POST", "/update");
+                    // The controller accepts changes only from its own pages, which send this header.
+                    ajax.setRequestHeader('X-BLSmartFlow', '1');
 
                     ajax.send(formdata);
                 }
@@ -163,8 +164,11 @@
                 }
 
                 function completeHandler(event) {
-                    _("progressBar").value = 0; 
-                    _("status").textContent = "Status: Update complete!";
+                    var ajax = event.target;
+                    _("progressBar").value = 0;
+                    _("status").textContent = ajax.status === 200
+                        ? "Status: Update complete! The controller is restarting."
+                        : "Status: Update failed (" + (ajax.responseText || ajax.status) + "). The current firmware is still running.";
                 }
 
                 function startHandler(event) {
@@ -192,8 +196,7 @@
                     }else{
                         _('button-send').disabled = true;
                     }
-                    _('status').innerHTML = "Firmware Upload!";
-                    _("loaded_n_total").innerHTML = "";
+                    _('status').textContent = "Firmware Upload!";
                 });
             </script>
         </div>
