@@ -56,6 +56,10 @@ def merge_bin(source, target, env):
     print(f'Firmware (merged) copied to: {firmware_path_merged}')
     return result
 
+# Write a newly reserved build number to platformio.ini now that the image exists (version_build.py)
+if "RECORD_FIRMWARE_VERSION" in env:
+    env.AddPostAction(APP_BIN, env["RECORD_FIRMWARE_VERSION"])
+
 # Immer OTA-Datei erzeugen (unkomprimiert, mit Endung .bin.ota)
 env.AddPostAction(APP_BIN, copy_bin_as_ota)
 

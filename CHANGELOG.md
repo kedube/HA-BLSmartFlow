@@ -16,6 +16,7 @@
 - Pinned Chart.js to version 4, so a future major release cannot break the Fan Graph.
 - Generated web page headers no longer change with the build machine's Python version.
 - Pinned the build to the `espressif32@6.9.0` platform (Arduino-ESP32 2.0.17), because the ESP32SSDP library does not build on newer platforms.
+- Fixed builds failing with "opening dependency file … No such file or directory" while VS Code was open. The build number is now written to `platformio.ini` after the firmware image is built instead of before compiling, which had made the PlatformIO extension delete the build directory mid-build. A failed build no longer uses up a build number.
 
 ## 1.3.12 — 2026-10-23
 
