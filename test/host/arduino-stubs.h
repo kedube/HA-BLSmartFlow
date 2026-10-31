@@ -249,7 +249,12 @@ struct WebServer {
     void handleClient() {}
     HTTPUpload& upload() { static HTTPUpload u; return u; }
 };
-struct MDNSMock { bool begin(const char*) { return true; } } MDNS;
+struct MDNSMock {
+    std::string hostname;
+    int starts = 0;
+    bool begin(const char *name) { hostname = name; ++starts; return true; }
+    void end() { hostname.clear(); }
+} MDNS;
 struct UpdateMock {
     bool began = false, ended = false, aborted = false, fail = false;
     size_t written = 0;

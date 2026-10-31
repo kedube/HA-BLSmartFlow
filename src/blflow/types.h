@@ -27,7 +27,6 @@ extern "C"
         char SSID[33];                  // 32-character SSID plus terminator
         char APPW[64];                  // 63-character WPA2 passphrase plus terminator
         String FWVersion = "Stable " STRVERSION " (" STRBUILDDATE ")";
-        String Host = "BLFLOW";
         bool started = false;
         int fanSpeed = 0;
         int fanSpeed2 = 0;
@@ -65,6 +64,9 @@ extern "C"
         FanCurve fanGraph = defaultFanCurve();
         // Empty until independent settings are first saved; then retained in sync mode.
         FanCurve fanGraph2;
+
+        // Names the device in Home Assistant and gives the .local address; empty uses the defaults.
+        char controllerName[33] = "";
 
         // Home Assistant MQTT broker; a separate connection from the printer's.
         bool haEnabled = false;

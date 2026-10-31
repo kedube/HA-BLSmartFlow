@@ -8,6 +8,7 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <Update.h>
+#include "controller-name.h"
 #include "diagnostics.h"
 #include "filesystem.h"
 #include "fans.h"
@@ -162,6 +163,7 @@ void handleGetOptions(){
     doc["postPrintSeconds2"] = postPrint2.seconds;
     doc["postPrintSpeed2"] = postPrint2.speed;
 
+    doc["controllerName"] = printerConfig.controllerName;
     doc["haEnabled"] = printerConfig.haEnabled;
     doc["haHost"] = printerConfig.haHost;
     doc["haPort"] = printerConfig.haPort;
@@ -186,6 +188,18 @@ void handleGetOptions(){
     webServer.send(200, "application/json", jsonString);
 
     LogSerial.println(F("Packet sent to setuppage"));
+}
+
+// Keep controlling the fans without the .local name rather than halting.
+void startMdns() {
+    const String host = controllerHostname();
+    if (!MDNS.begin(host.c_str())) {
+        LogSerial.println(F("Error setting up MDNS responder; use the IP address instead"));
+        return;
+    }
+    LogSerial.print(F("Web pages also at http://"));
+    LogSerial.print(host);
+    LogSerial.println(F(".local/"));
 }
 
 // All web updates are staged, persisted, then applied to the running controller.
@@ -356,6 +370,10 @@ void submitOptions() {
             return;
         }
     }
+    if (!readTextArgument("controllerName", candidate.controllerName, true)) {
+        webServer.send(400, "text/plain", "The controller name must be 32 characters or fewer");
+        return;
+    }
     const char *error = nullptr;
     if (!readHomeAssistantArguments(candidate, printerConfig, error) || !readLoginArguments(candidate, error)) {
         webServer.send(400, "text/plain", error);
@@ -376,10 +394,17 @@ void submitOptions() {
         return;
     }
     const bool haChanged = haConnectionChanged(printerConfig, candidate);
+    const bool nameChanged = strcmp(candidate.controllerName, printerConfig.controllerName) != 0;
+    const bool hostnameChanged = controllerHostname(candidate) != controllerHostname();
     const bool radioChanged = candidate.wifiTxPower != printerConfig.wifiTxPower || candidate.wifiSleep != printerConfig.wifiSleep;
     const bool ssdpChanged = candidate.ssdpEnabled != printerConfig.ssdpEnabled;
     applySettings(std::move(candidate));
     if (haChanged) haSettingsChanged();
+    else if (nameChanged) haNameChanged();
+    if (hostnameChanged) {
+        MDNS.end();
+        startMdns();
+    }
     if (radioChanged) applyWifiRadioSettings();
     if (ssdpChanged) {
         if (printerConfig.ssdpEnabled) start_ssdp();
@@ -604,11 +629,7 @@ void handleRestart() {
 }
 
 void setupWebserver(){
-    // Keep controlling the fans without the .local name rather than halting.
-    if (!MDNS.begin(globalVariables.Host.c_str())) {
-        LogSerial.println(F("Error setting up MDNS responder; use the IP address instead"));
-    }
-    
+    startMdns();
     LogSerial.println(F("Setting up webserver"));
 
     // The server keeps only the request headers it is told to; it always keeps Authorization.

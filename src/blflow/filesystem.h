@@ -48,6 +48,7 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
         json["postPrintSeconds2"] = config.postPrint2.seconds;
         json["postPrintSpeed2"] = config.postPrint2.speed;
     }
+    json["controllerName"] = config.controllerName;
     json["haEnabled"] = config.haEnabled;
     json["haHost"] = config.haHost;
     json["haPort"] = config.haPort;
@@ -156,6 +157,7 @@ void loadFileSystem(){
             }
         }
         if (!loaded.fansSynchronized) initializeSecondFan(loaded);
+        snprintf(loaded.controllerName, sizeof(loaded.controllerName), "%s", json["controllerName"] | "");
         snprintf(loaded.haHost, sizeof(loaded.haHost), "%s", json["haHost"] | "");
         snprintf(loaded.haUser, sizeof(loaded.haUser), "%s", json["haUser"] | "");
         snprintf(loaded.haPassword, sizeof(loaded.haPassword), "%s", json["haPassword"] | "");

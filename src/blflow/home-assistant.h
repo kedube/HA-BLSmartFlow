@@ -16,6 +16,7 @@
 #include <strings.h>
 
 #include "connect-timeout.h"
+#include "controller-name.h"
 #include "types.h"
 #include "fan-config.h"
 #include "fans.h"
@@ -192,9 +193,9 @@ bool haPublishJson(const String &topic, const JsonDocument &doc) {
 
 void haAddDevice(JsonObject device) {
     device["identifiers"].to<JsonArray>().add(haNodeId);
-    device["name"] = "BL Smart Flow+";
+    device["name"] = controllerName();
     device["manufacturer"] = "DutchDeveloper";
-    device["model"] = "BLSmartFlow ESP32";
+    device["model"] = "BLSmartFlow Controller";
     device["sw_version"] = globalVariables.FWVersion;
     device["configuration_url"] = String("http://") + WiFi.localIP().toString() + "/";
 }
@@ -346,6 +347,7 @@ void haPublishState() {
 }
 
 void haPublishAll() {
+    haDiscoveryPending = false;
     haPublishDiscovery();
     haPublish(haBaseTopic + "/status", "online");
     // Republish the state too, in case the broker lost its retained copy.
@@ -393,6 +395,12 @@ void haSettingsChanged() {
     haRetryMs = 0;
 }
 
+// Republishes discovery so Home Assistant shows the new device name, unless it was renamed there.
+// A connection made later publishes it anyway.
+void haNameChanged() {
+    haDiscoveryPending = true;
+}
+
 const char *homeAssistantStatus() {
     if (!printerConfig.haEnabled) return "disabled";
     if (haMqtt.connected()) return "connected";
@@ -425,10 +433,7 @@ void homeAssistantLoop() {
     }
     haMqtt.loop();
     if (!haMqtt.connected()) return;
-    if (haDiscoveryPending) {
-        haDiscoveryPending = false;
-        haPublishAll();
-    }
+    if (haDiscoveryPending) haPublishAll();
     if (haStatePending || millis() - haLastStateCheck >= haStateIntervalMs) haPublishState();
 }
 

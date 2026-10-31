@@ -23,6 +23,7 @@ void reset() {
     mockMillis = 0;
     WiFi = WiFiMock{};
     SSDP = SSDPMock{};
+    MDNS = MDNSMock{};
     mockResetReason = ESP_RST_POWERON;
     mockUptimeMicros = 0;
     LogSerial = LogSerialClass{};

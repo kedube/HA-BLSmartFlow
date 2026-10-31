@@ -638,6 +638,25 @@ test('older firmware leaves Home Assistant off, and turning it off disables the 
   assert.equal(body.get('haEnabled'), 'off');
 });
 
+test('the controller name loads, shows the address it gives as you type, and saves', async () => {
+  let page = await readyPage();
+  assert.equal(page.get('controllerName').value, '');
+  assert.equal(page.get('controllerAddress').textContent, 'http://blflow.local/');
+  page = await readyPage({ ...baseConfig, controllerName: 'Garage P1S' });
+  assert.equal(page.get('controllerName').value, 'Garage P1S');
+  assert.equal(page.get('controllerAddress').textContent, 'http://garage-p1s.local/');
+  // The same names as the firmware test, which derives the address it actually uses.
+  for (const [name, host] of [['garage p1s', 'garage-p1s'], ['Café #2 — X1C', 'caf-2-x1c'], ['!!!', 'blflow'], ['', 'blflow']]) {
+    page.get('controllerName').value = name;
+    page.trigger('controllerName', 'input');
+    assert.equal(page.get('controllerAddress').textContent, `http://${host}.local/`);
+  }
+  page.get('controllerName').value = 'Workshop A1';
+  page.trigger('controllerName', 'input');
+  page.context.submitOptions({ preventDefault() {} });
+  assert.equal(new URLSearchParams(page.requests[1].body).get('controllerName'), 'Workshop A1');
+});
+
 test('the broker connection status updates with telemetry', async () => {
   const page = await readyPage(haConfig);
   for (const [status, state, expected] of [

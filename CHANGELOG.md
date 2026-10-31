@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added **Controller Name**, at the top of the **Home Assistant** section, to tell several controllers apart. It names the device in Home Assistant, which was **BL Smart Flow+** for every controller, and sets the `.local` address, which was always `blflow.local`: `Garage P1S` is at `http://garage-p1s.local/`, as the field shows while you type. A new name reaches Home Assistant when you save. Without a name, both keep their earlier defaults.
+
 ## 1.5.1 — 2026-10-31
 
 - Redesigned Settings after the BLLED controller's pages, keeping the blue background: one page with collapsible sections (Fan Control, Fan Curves, Printer, Home Assistant, Web Page Login, Debug & Diagnostics, and Device Tools), one open at a time. The Fan Graph tab is now the **Fan Curves** section, and pressing Enter in a point's fields applies the point. Switches sit on the right of their settings, and save confirmations appear in the middle of the page.

@@ -44,6 +44,20 @@ int discoveryCount() {
     return count;
 }
 
+// Every discovery config published since the last clear names the same device.
+std::string discoveredDeviceName() {
+    std::set<std::string> names;
+    for (const auto &message : haMqtt.published) {
+        if (message.topic.rfind("homeassistant/", 0) != 0) continue;
+        assert(message.topic.find("/" + haNode + "/") != std::string::npos);
+        JsonDocument config; assert(!deserializeJson(config, message.payload));
+        assert(config["device"]["identifiers"][0] == haNode);
+        names.insert(config["device"]["name"].as<std::string>());
+    }
+    assert(names.size() == 1);
+    return *names.begin();
+}
+
 void homeAssistantTests() {
     check("Home Assistant settings persist and the broker password is never sent to the page", [] {
         putConfig(legacyConfig); reboot();
@@ -298,6 +312,47 @@ void homeAssistantTests() {
         printerVariables.nozzletemp = 210.06;
         mockMillis += 1000; homeAssistantLoop();
         assert(lastPublished(haBase + "/state")->payload.find("\"temperature\":210.1,") != std::string::npos);
+    });
+    check("the controller name labels the Home Assistant device and sets the .local address", [] {
+        putConfig(legacyConfig); reboot();
+        enableHomeAssistant(); startMdns(); startHomeAssistant();
+        assert(discoveredDeviceName() == "BL Smart Flow+" && MDNS.hostname == "blflow");
+        handleGetOptions(); assert(response()["controllerName"] == "");
+        // Renaming republishes discovery on the same connection, under the same identifiers.
+        const int connects = haMqtt.connects;
+        haMqtt.published.clear();
+        assert(options({{"controllerName","  Garage P1S  "}}) == 200);
+        assert(std::string(printerConfig.controllerName) == "Garage P1S" && MDNS.hostname == "garage-p1s");
+        homeAssistantLoop();
+        assert(haMqtt.connects == connects && discoveryCount() == 19 && discoveredDeviceName() == "Garage P1S");
+        assert(lastPublished(haBase + "/status")->payload == "online");
+        reboot(); assertCredentials();
+        assert(std::string(printerConfig.controllerName) == "Garage P1S" && controllerHostname() == "garage-p1s");
+        handleGetOptions(); assert(response()["controllerName"] == "Garage P1S");
+        // Other settings, or a name with the same address, leave the .local name alone.
+        const int starts = MDNS.starts;
+        haMqtt.published.clear();
+        assert(options({{"staticfan","on"},{"staticfanspeed","10"}}) == 200);
+        homeAssistantLoop(); assert(discoveryCount() == 0 && MDNS.starts == starts);
+        assert(options({{"controllerName","garage p1s"}}) == 200);
+        homeAssistantLoop(); assert(discoveredDeviceName() == "garage p1s" && MDNS.starts == starts);
+        // Only letters and digits reach the address; without any, it keeps the default.
+        assert(options({{"controllerName","Café #2 — X1C"}}) == 200 && MDNS.hostname == "caf-2-x1c");
+        assert(options({{"controllerName","!!!"}}) == 200 && MDNS.hostname == "blflow");
+        haMqtt.published.clear();
+        assert(options({{"controllerName",""}}) == 200 && MDNS.hostname == "blflow");
+        homeAssistantLoop(); assert(discoveredDeviceName() == "BL Smart Flow+");
+        const auto disk = savedConfig();
+        assert(options({{"controllerName",std::string(33,'n')}}) == 400);
+        assert(savedConfig() == disk && !printerConfig.controllerName[0]);
+        assert(options({{"controllerName",std::string(32,'n')}}) == 200 && MDNS.hostname == std::string(32,'n'));
+    });
+    check("a rename while disconnected reaches Home Assistant once on connecting", [] {
+        enableHomeAssistant({{"controllerName","Workshop"}}); setupHomeAssistant();
+        haMqtt.connectResult = true;
+        assert(options({{"controllerName","Workshop A1"}}) == 200);
+        homeAssistantLoop(); homeAssistantLoop();
+        assert(discoveryCount() == 19 && discoveredDeviceName() == "Workshop A1");
     });
     check("printer reconnects back off from 3 to 30 seconds and bound the TLS connect time", [] {
         mqttClient.isConnected = false;
