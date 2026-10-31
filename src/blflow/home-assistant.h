@@ -20,6 +20,7 @@
 #include "fan-config.h"
 #include "fans.h"
 #include "filesystem.h"
+#include "log-serial.h"
 #include "mqtt-report.h"
 #include "post-print.h"
 
@@ -140,22 +141,22 @@ bool haReadCommand(const char *key, const String &value, PrinterConfig &config) 
 void haApplyCommand(const char *key, const String &value) {
     PrinterConfig candidate = printerConfig;
     if (!haReadCommand(key, value, candidate)) {
-        Serial.print(F("[HA] Ignored command "));
-        Serial.print(key);
-        Serial.print(F(": "));
-        Serial.println(value);
+        LogSerial.print(F("[HA] Ignored command "));
+        LogSerial.print(key);
+        LogSerial.print(F(": "));
+        LogSerial.println(value);
         return;
     }
     if (sameFanSettings(printerConfig, candidate)) return;
     if (!saveFileSystem(candidate)) {
-        Serial.println(F("[HA] Failed to save the command; settings unchanged"));
+        LogSerial.println(F("[HA] Failed to save the command; settings unchanged"));
         return;
     }
     applySettings(std::move(candidate));
-    Serial.print(F("[HA] Applied "));
-    Serial.print(key);
-    Serial.print(F(": "));
-    Serial.println(value);
+    LogSerial.print(F("[HA] Applied "));
+    LogSerial.print(key);
+    LogSerial.print(F(": "));
+    LogSerial.println(value);
 }
 
 void haCallback(char *topic, byte *payload, unsigned int length) {
@@ -309,7 +310,7 @@ void haPublishDiscovery() {
             haPublishEntity("number", key + "post_print_speed", label + "Post Print speed", config, true, fan2Setting);
         }
     }
-    Serial.println(F("[HA] Published discovery configs"));
+    LogSerial.println(F("[HA] Published discovery configs"));
 }
 
 // Publishes the retained state when it has changed; every entity reads its field from it.
@@ -357,10 +358,10 @@ void haPublishAll() {
 
 bool haConnect() {
     haMqtt.setServer(printerConfig.haHost, printerConfig.haPort);
-    Serial.print(F("[HA] Connecting to "));
-    Serial.print(printerConfig.haHost);
-    Serial.print(F(":"));
-    Serial.println(printerConfig.haPort);
+    LogSerial.print(F("[HA] Connecting to "));
+    LogSerial.print(printerConfig.haHost);
+    LogSerial.print(F(":"));
+    LogSerial.println(printerConfig.haPort);
     const char *user = strlen(printerConfig.haUser) > 0 ? printerConfig.haUser : nullptr;
     const char *password = strlen(printerConfig.haPassword) > 0 ? printerConfig.haPassword : nullptr;
     const String availability = haBaseTopic + "/status";
@@ -369,12 +370,12 @@ bool haConnect() {
     haLastAttempt = millis();
     if (!connected) {
         haRetryMs = std::min(std::max(haRetryMs * 2, haRetryMinimumMs), haRetryMaximumMs);
-        Serial.print(F("[HA] Connection failed with state "));
-        Serial.println(haMqtt.state());
+        LogSerial.print(F("[HA] Connection failed with state "));
+        LogSerial.println(haMqtt.state());
         return false;
     }
     haRetryMs = 0;
-    Serial.println(F("[HA] Connected"));
+    LogSerial.println(F("[HA] Connected"));
     haMqtt.subscribe((haBaseTopic + "/set/+").c_str());
     haMqtt.subscribe(haBirthTopic);
     haPublishAll();
@@ -412,8 +413,8 @@ void setupHomeAssistant() {
     haMqtt.setSocketTimeout(5);
     haMqtt.setCallback(haCallback);
     haConfigured = true;
-    Serial.print(F("[HA] Node ID: "));
-    Serial.println(haNodeId);
+    LogSerial.print(F("[HA] Node ID: "));
+    LogSerial.println(haNodeId);
 }
 
 void homeAssistantLoop() {

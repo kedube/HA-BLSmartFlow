@@ -1,380 +1,68 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BL Smart Flow+</title>
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/style.css">
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
-    :root {
-      --color-black: black;
-      --color-cod-gray: #101010;
-      --color-white: white;
-      --color-error: rgb(191, 95, 95);
-      --color-primary: rgb(68, 100, 136);
-      --panel-max-width: 800px;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      background-color: var(--color-black);
-      font-family: Arial, sans-serif;
-      color: var(--color-white);
-    }
-
-    #particleCanvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: -1;
-      background: rgb(28, 75, 114);
-    }
-
-    .container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem 1rem;
-      max-width: 1200px;
-      width: 100%;
-    }
-
-    .logo-container {
-      display: flex;
-      align-items: center;
-      margin-bottom: 1rem;
-    }
-
-    .logo-text {
-      font-size: 2rem;
-      font-weight: bold;
-      color: var(--color-white);
-      text-shadow: 1px 1px var(--color-black);
-    }
-
-    .fan-stack {
-      position: relative;
-      display: inline-block;
-      width: 80px;
-      height: 80px;
-      margin-right: 20px;
-      overflow: hidden;
-    }
-
-    .fan-stack img {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 80px;
-      height: 80px;
-      object-fit: contain;
-    }
-
-    .fanshell {
-      z-index: 1;
-    }
-
-    .fanblades {
-      z-index: 2;
-      transform-origin: 50% 50%;
-    }
-
-    @keyframes spin {
-      0% {
-        transform: rotate(0deg);
-      }
-      100% {
-        transform: rotate(360deg);
-      }
-    }
-
-    [hidden] { display: none !important; }
-    .logo-container { flex-wrap: wrap; justify-content: center; gap: 1rem; }
+    #header h1 { font-size: 1.9rem; }
     .fan-indicator { text-align: center; }
-    .fan-indicator .fan-stack { display: block; margin: 0 auto .35rem; }
+    .fan-stack { position: relative; width: 64px; height: 64px; margin: 0 auto .3rem; overflow: hidden; }
+    .fan-stack img { position: absolute; top: 0; left: 0; width: 64px; height: 64px; object-fit: contain; }
+    .fanshell { z-index: 1; }
+    .fanblades { z-index: 2; transform-origin: 50% 50%; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .fan-label { display: block; font-size: .85rem; }
-    .fan-source { color: var(--color-white); margin-top: .2rem; min-height: 1.2em; line-height: 1.2; white-space: nowrap; }
-    .fan-one { color: #73b9ff; }
+    .fan-source { min-height: 1.2em; line-height: 1.2; white-space: nowrap; }
+    .fan-one { color: #9fd0ff; }
     .fan-two { color: #ffbe70; }
-    #settings-fields { border: 0; padding: 0; min-width: 0; width: 100%; }
-    #settings-form { width: 100%; }
-    .printer-information { margin: 1rem 0 1.5rem; }
-    .printer-information h2 { margin-bottom: 1.25rem; }
-    .printer-option-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 18rem); align-items: center; gap: .5rem 1rem; margin: .75rem 0; }
-    .printer-option-row input[type=text], .printer-option-row input[type=password], .printer-option-row input[type=number] { width: 100%; min-width: 0; padding: .45rem .6rem; margin: 0; font-family: inherit; font-size: revert; }
-    .printer-option-row input[type=password], .printer-option-row input[type=number] { border: 1px solid #ccc; border-radius: 5px; }
-    .home-assistant, .web-login { margin: 1.5rem 0; }
-    .ha-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
-    .field-help { font-size: .85rem; color: #555; margin: .5rem 0; }
-    #login-status.unprotected { color: var(--color-error); font-weight: bold; }
-    #firmwareversion a { color: inherit; }
-    .fan-features { margin: 1rem 0; }
-    .fan-option-row { display: grid; grid-template-columns: 60px minmax(0, 1fr) max-content; align-items: center; gap: .5rem .75rem; margin: .75rem 0; }
-    .fan-option-row > label[for], .printer-option-row > label { width: auto; min-width: 0; font-size: 1.1475rem; }
-    #settings-fields .switch { width: 60px; flex: 0 0 60px; margin: 0; }
-    .fan-parameters { justify-self: end; }
-    .static-speed-values, .post-print-values { display: flex; align-items: center; justify-content: flex-end; gap: .35rem; }
-    .static-speed-row input[type=number], .post-print-values input { width: calc(3ch + 1.75rem); padding: .4rem .3rem; min-width: 0; flex-shrink: 0; }
-    .follow-fan-row select { width: 11rem; max-width: 100%; min-width: 0; padding: .4rem; font-size: .9rem; }
-    .post-print-values { font-size: .9rem; }
+
+    /* A setting's name on the left, its values, then its switch on the right. */
+    .option-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: .4rem .6rem;
+      margin-bottom: 10px;
+    }
+    .option-row > label:not(.switch) { margin: 0; font-weight: 600; }
+    .post-print-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .post-print-row > .fan-parameters { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
+    .fan-parameters { display: flex; align-items: center; justify-content: flex-end; gap: .35rem; }
+    .fan-parameters input[type=number] { width: calc(3ch + 1.75rem); margin: 0; padding: 4px; text-align: center; }
     .post-print-values input[name^=postPrintSeconds] { width: calc(4ch + 1.75rem); }
-    #firmwareversion { font-size: .75rem; width: 100%; max-width: var(--panel-max-width); text-align: left; margin-top: 1.5rem; }
-    @media (max-width: 540px) {
-      .printer-option-row { grid-template-columns: minmax(0, 1fr); }
-      .fan-option-row { grid-template-columns: 60px minmax(0, 1fr); }
-      .fan-parameters { grid-column: 1 / -1; max-width: 100%; }
-    }
-    #settings-status, #curve-status, #mode-status, #ha-status { margin: .6rem 0; font-size: .9rem; }
-    #save-notice {
-      position: fixed;
-      top: 1.5rem;
-      right: 1.5rem;
-      z-index: 10;
-      max-width: calc(100% - 3rem);
-      padding: .85rem 1.2rem;
-      border-radius: 8px;
-      background: #236139;
-      color: var(--color-white);
-      box-shadow: 0 3px 12px rgba(0, 0, 0, .3);
-      text-align: center;
-      pointer-events: none;
-    }
-    button:disabled, input:disabled { cursor: default; opacity: .55; }
-    .telemetry { margin-top: 1rem; }
-    .fangraph-container { width: 100%; }
-    @media (max-width: 400px) {
-      .toggles-container, .fangraph-container { padding: 12px; }
-      .container { padding: 1rem .5rem; }
-    }
+    select.fan-parameters { width: 11rem; margin: 0; padding: 4px; }
+    .synchronization-row > label:not(.switch) { font-size: 1.05rem; }
 
-    /* TABS */
-    .tabs {
-      display: flex;
-      gap: 1rem;
-      margin-bottom: 1rem;
-    }
-    .tab-btn {
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-      border: none;
-      border-radius: 5px;
-      background-color: var(--color-white);
-      color: var(--color-black);
-      transition: background 0.3s;
-    }
-    .tab-btn:hover {
-      background-color: rgb(186, 215, 255);
-    }
-    .tab-btn.active {
-      background-color: rgb(56, 137, 229);
-      color: rgb(255, 255, 255);
-      font-weight: bold;
-    }
+    .chart-container { width: 100%; margin-bottom: 10px; }
+    .chart-container canvas { max-width: 100%; }
+    #fanSelectorRow .toggle-label { font-weight: 600; }
+    #fanSelectorRow .switch-pair { display: flex; align-items: center; gap: .5rem; }
+    .point-fields input[type=number] { width: 6rem; }
+    .button-row { display: flex; gap: 8px; }
+    .button-row button { flex: 1; }
+    #removePointBtn { background-color: var(--error); }
+    .telemetry { font-size: .9rem; line-height: 1.5; margin-top: 4px; }
 
-    /* TAB CONTENT */
-    .tab-content {
-      display: none;
-      width: 100%;
+    #login-status.unprotected { color: var(--error); font-weight: bold; }
+    .diag-wrapper { position: relative; }
+    #refreshDiag {
+      position: absolute; top: 4px; right: 6px; width: auto; margin: 0; padding: 0 4px;
+      background: none; color: #999; font-size: 20px; line-height: 1;
     }
-    .tab-content.active {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    /*Options Tab) */
-
-    form label {
-      width: 100%;
-      font-weight: bold;
-      font-size: 16px;
-      color: #333;
-    }
-
-    form input[type='text'] {
-      width: 100%;
-      padding: 10px;
-      border-radius: 5px;
-      border: 1px solid #ccc;
-      margin-bottom: 20px;
-      font-size: 16px;
-    }
-
-    form input[type='submit'] {
-      background-color: rgb(56, 137, 229);
-      color: rgb(255, 255, 255);
-      font-weight: bold;
-
-      margin: .15rem;
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-      border: none;
-      border-radius: 5px;
-      transition: background 0.3s;
-    }
-
-    /*CHART WRAPPER (Fan Graph Tab) */
-    .fangraph-container {
-      background-color: var(--color-white);
-      color: var(--color-black);
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      max-width: var(--panel-max-width);
-    }
-
-    .chart-container {
-      width: 500px;
-      max-width: 100%;
-      margin: 0 auto 2rem;
-      text-align: center;
-    }
-    .chart-container canvas {
-      max-width: 100%;
-      height: auto;
-    }
-
-    .controls {
-      width: 100%;
-      max-width: 500px;
-      margin: 0 auto;
-      text-align: left;
-      border: 1px solid #ccc;
-      padding: 1em;
-      border-radius: 8px;
-    }
-    .controls h2 {
-      margin-top: 0;
-      margin-bottom: 0.5em;
-    }
-    .controls label {
-      display: inline-block;
-      width: 150px;
-      margin-bottom: 0.5em;
-    }
-    .controls input[type="number"] {
-      width: 100px;
-      margin-right: 10px;
-    }
-    .controls button {
-      margin-top: 1em;
-      padding: 0.5em 1em;
-      cursor: pointer;
-      border: none;
-      border-radius: 5px;
-      background: var(--color-primary);
-      color: var(--color-white);
-      transition: background 0.3s;
-    }
-    .controls button:hover {
-      background: rgb(119, 152, 190);
-    }
-    .controls .section {
-      margin-bottom: 1.5em;
-    }
-
-    /* TOGGLE BUTTONS (Second Tab) */
-    .toggles-container {
-      background-color: var(--color-white);
-      color: var(--color-black);
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-      max-width: var(--panel-max-width);
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1rem;
-    }
-
-    /* A simple switch style (optional) */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 60px;
-      height: 34px;
-      margin: .15rem;
-    }
-
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #ccc;
-      transition: 0.4s;
-      border-radius: 34px;
-    }
-
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 26px;
-      width: 26px;
-      left: 4px;
-      bottom: 4px;
-      background-color: white;
-      transition: 0.4s;
-      border-radius: 50%;
-    }
-
-    input:checked + .slider {
-      background-color: var(--color-primary);
-    }
-
-    input:checked + .slider:before {
-      transform: translateX(26px);
-    }
-    input:focus-visible + .slider { outline: 2px solid #1565c0; outline-offset: 3px; }
-    input:disabled + .slider { cursor: default; opacity: .55; }
-
-    .switch-with-label {
-      display: flex;
-      align-items: center;
-      gap: .75rem;
-    }
-    .labeled-switch {
-      gap: .5rem;
-      margin: .5rem 0;
-    }
-    .synchronization-row { display: flex; align-items: center; gap: .75rem; }
-    .synchronization-row > label[for] { width: auto; min-width: 0; font-size: 1.5rem; color: inherit; }
-    .switch-with-label .switch { width: 60px; flex: 0 0 60px; margin: .15rem; }
-    .toggle-label {
-      font-size: 1rem;
-      user-select: none;
-    }
+    #refreshDiag:hover { color: #444; }
+    #diagPanel { padding-right: 32px; }
   </style>
 </head>
 
 <body>
   <canvas id="particleCanvas"></canvas>
 
-  <!-- Main Container -->
-  <div class="container">
-
-    <div class='logo-container'>
-
+  <div id="container">
+    <div id="header">
       <div id="fan1Indicator" class="fan-indicator">
         <div class="fan-stack">
           <img class="fanshell" src="https://raw.githubusercontent.com/DutchDevelop/BLSmartFlow/main/src/www/smartflow_shell.png" alt="Fan 1 shell">
@@ -391,266 +79,344 @@
         <span class="fan-label"><span class="fan-two">Fan 2</span>: <span id="fan2Percent">-</span>%</span>
         <span id="fan2Source" class="fan-label fan-source"></span>
       </div>
-      <span class='logo-text'>BL Smart Flow+</span>
+      <h1>BL Smart Flow+</h1>
     </div>
 
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="toggleTab">Settings</button>
-      <button class="tab-btn" data-tab="fanGraphTab">Fan Graph</button>
-    </div>
+    <div class="form-container">
+      <div class="status-bar">
+        <!-- Controller, link, and printer -->
+        <svg viewBox="0 0 140 56" xmlns="http://www.w3.org/2000/svg" role="img">
+          <title id="printerTitle">Printer: unknown</title>
+          <g fill="#3889e5">
+            <circle cx="17" cy="28" r="15.5" fill="none" stroke="#3889e5" stroke-width="3" />
+            <circle cx="17" cy="28" r="3.2" />
+            <path d="M17 25C13.5 20.5 15.5 13.5 21.5 13.2C25.5 13.5 25.5 18.5 20.8 22.6Z" />
+            <path d="M17 25C13.5 20.5 15.5 13.5 21.5 13.2C25.5 13.5 25.5 18.5 20.8 22.6Z" transform="rotate(120 17 28)" />
+            <path d="M17 25C13.5 20.5 15.5 13.5 21.5 13.2C25.5 13.5 25.5 18.5 20.8 22.6Z" transform="rotate(240 17 28)" />
+          </g>
+          <g id="printerOnline" style="display:none">
+            <path fill="#327b1d" fill-rule="evenodd" d="M59.95,33.52c.52,1.11.33,2.47-.59,3.39l-6.25,6.25c-1.17,1.17-3.07,1.17-4.24,0l-2.05-2.05c-1.17-1.17-1.17-3.07,0-4.24l6.25-6.25c.92-.92,2.27-1.11,3.39-.59l2.16-2.16c-2.34-1.63-5.58-1.42-7.66.67l-6.2,6.2c-2.34,2.34-2.34,6.14,0,8.49l2.01,2.01c2.34,2.34,6.14,2.34,8.49,0l6.2-6.2c2.09-2.09,2.3-5.33.67-7.66l-2.16,2.16ZM54.83,35.13h0c.58.58,1.52.58,2.09,0l11.19-11.19c.58-.58.58-1.52,0-2.09h0c-.58-.58-1.52-.58-2.09,0l-11.19,11.19c-.58.58-.58,1.52,0,2.09ZM78.22,13.75l-2.01-2.01c-2.34-2.34-6.14-2.34-8.49,0l-6.2,6.2c-2.09,2.09-2.3,5.33-.67,7.66l2.16-2.16c-.52-1.11-.33-2.47.59-3.39l6.25-6.25c1.17-1.17,3.07-1.17,4.24,0l2.05,2.05c1.17,1.17,1.17,3.07,0,4.24l-6.25,6.25c-.92.92-2.27,1.11-3.39.59l-2.16,2.16c2.34,1.63,5.58,1.42,7.66-.67l6.2-6.2c2.34-2.34,2.34-6.14,0-8.49Z" />
+          </g>
+          <g id="printerOffline">
+            <path fill="#c00" fill-rule="evenodd" d="M45.95,21.78l5.61,2.25c.52.21,1.1-.04,1.31-.55s-.04-1.09-.56-1.3l-5.61-2.25c-.52-.21-1.1.04-1.31.55-.21.51.04,1.09.56,1.3ZM54.44,19.77c.34.44.98.51,1.42.17.44-.34.52-.97.17-1.4l-3.73-4.73c-.34-.44-.98-.51-1.42-.17-.44.34-.52.97-.17,1.4l3.73,4.73ZM60.03,17.94c.55-.08.94-.58.86-1.13l-.84-5.94c-.08-.55-.59-.93-1.14-.85-.55.08-.94.58-.86,1.13l.84,5.94c.08.55.59.93,1.14.85ZM60.32,33.23c.53,1.11.35,2.48-.58,3.41l-6.42,6.36c-1.18,1.17-3.1,1.17-4.28,0l-2.14-2.12c-1.18-1.17-1.18-3.07,0-4.24l6.42-6.36c.93-.92,2.31-1.11,3.44-.58l2.2-2.18c-2.36-1.67-5.65-1.47-7.77.64l-6.42,6.36c-2.36,2.34-2.36,6.14,0,8.49l2.14,2.12c2.36,2.34,6.2,2.34,8.56,0l6.42-6.36c2.12-2.1,2.32-5.36.64-7.71l-2.2,2.18ZM82.21,18.1l-1.51-2.6c-1.67-2.87-5.37-3.85-8.27-2.2l-7.86,4.5c-2.6,1.49-3.64,4.59-2.63,7.28l2.69-1.54c-.23-1.21.31-2.49,1.45-3.14l7.86-4.5c1.45-.83,3.3-.34,4.13,1.1l1.51,2.6c.84,1.43.34,3.27-1.11,4.1l-7.86,4.5c-1.14.65-2.52.48-3.47-.32l-2.69,1.54c1.85,2.22,5.08,2.87,7.67,1.38l7.86-4.5c2.89-1.66,3.89-5.33,2.22-8.2ZM78.54,35.26l-5.57-2.2c-.51-.2-1.1.05-1.31.56s.03,1.09.55,1.29l5.57,2.2c.51.2,1.1-.05,1.31-.56s-.03-1.09-.55-1.29ZM64.51,39.16c-.55.08-.94.58-.86,1.13l.8,5.89c.07.54.58.92,1.13.84s.94-.58.86-1.13l-.8-5.89c-.07-.54-.58-.92-1.13-.84ZM70.09,37.31c-.34-.44-.98-.51-1.42-.17-.44.34-.52.97-.17,1.4l3.67,4.65c.34.44.98.51,1.42.17s.52-.97.17-1.4l-3.67-4.65Z" />
+          </g>
+          <path fill="#333" fill-rule="evenodd" d="M99.5,11h14c.83,0,1.5-.67,1.5-1.5V1.5c0-.83-.67-1.5-1.5-1.5h-14c-.83,0-1.5.67-1.5,1.5v8c0,.83.67,1.5,1.5,1.5ZM138,4h-22v6.5c0,.83-.67,1.5-1.5,1.5h-16c-.83,0-1.5-.67-1.5-1.5v-6.5h-4c-1.1,0-2,.9-2,2v48c0,1.1.9,2,2,2h45c1.1,0,2-.9,2-2V6c0-1.1-.9-2-2-2ZM136,49.5c0,.83-.67,1.5-1.5,1.5h-38c-.83,0-1.5-.67-1.5-1.5v-28.5h18v4.5c0,.55.45,1,1,1h1l1,1.5h1l1-1.5h1c.55,0,1-.45,1-1v-4.5h16v28.5ZM114.5,23c0-1.1.9-2,2-2s2,.9,2,2-.9,2-2,2-2-.9-2-2ZM136,19h-16v-1c0-.55-.45-1-1-1h-5c-.55,0-1,.45-1,1v1h-18v-3.5c0-.83.67-1.5,1.5-1.5h38c.83,0,1.5.67,1.5,1.5v3.5ZM96,49h39v-3h-39v3Z" />
+        </svg>
 
-    <div id="fanGraphTab" class="tab-content">
-      <div class='fangraph-container'>
-        <div class="chart-container">
-          <canvas id="myChart"></canvas>
-        </div>
-        <div class="controls">
-          <h2>Manage Data Points</h2>
-          <p id="mode-status" role="status"></p>
-          <p id="curve-status" role="status">Loading fan curves...</p>
-          <button id="retryCurves" hidden>Retry loading curves</button>
-          <div id="fanSelectorRow" hidden>
-            <label for="selectedFan">Edit curve:</label>
-            <div class="switch-with-label labeled-switch">
-              <span class="toggle-label" aria-hidden="true">Fan 1</span>
-              <label class="switch">
-                <input type="checkbox" id="selectedFan" role="switch" aria-label="Edit Fan 2 curve" disabled>
-                <span class="slider round"></span>
-              </label>
-              <span class="toggle-label" aria-hidden="true">Fan 2</span>
+        <!-- Home Assistant -->
+        <svg viewBox="0 0 103 56" xmlns="http://www.w3.org/2000/svg" role="img">
+          <title id="haTitle">Home Assistant: off</title>
+          <path id="haHouse" fill="#41BDF5" opacity="0.35" d="M29 1 L56 24 L50 24 V55 H35 V38 H23 V55 H8 V24 L2 24 Z" />
+          <g id="haOnline" transform="translate(18,0)" style="display:none">
+            <path fill="#327b1d" fill-rule="evenodd" d="M59.95,33.52c.52,1.11.33,2.47-.59,3.39l-6.25,6.25c-1.17,1.17-3.07,1.17-4.24,0l-2.05-2.05c-1.17-1.17-1.17-3.07,0-4.24l6.25-6.25c.92-.92,2.27-1.11,3.39-.59l2.16-2.16c-2.34-1.63-5.58-1.42-7.66.67l-6.2,6.2c-2.34,2.34-2.34,6.14,0,8.49l2.01,2.01c2.34,2.34,6.14,2.34,8.49,0l6.2-6.2c2.09-2.09,2.3-5.33.67-7.66l-2.16,2.16ZM54.83,35.13h0c.58.58,1.52.58,2.09,0l11.19-11.19c.58-.58.58-1.52,0-2.09h0c-.58-.58-1.52-.58-2.09,0l-11.19,11.19c-.58.58-.58,1.52,0,2.09ZM78.22,13.75l-2.01-2.01c-2.34-2.34-6.14-2.34-8.49,0l-6.2,6.2c-2.09,2.09-2.3,5.33-.67,7.66l2.16-2.16c-.52-1.11-.33-2.47.59-3.39l6.25-6.25c1.17-1.17,3.07-1.17,4.24,0l2.05,2.05c1.17,1.17,1.17,3.07,0,4.24l-6.25,6.25c-.92.92-2.27,1.11-3.39.59l-2.16,2.16c2.34,1.63,5.58,1.42,7.66-.67l6.2-6.2c2.34-2.34,2.34-6.14,0-8.49Z" />
+          </g>
+          <g id="haOffline" transform="translate(18,0)" style="display:none">
+            <path fill="#c00" fill-rule="evenodd" d="M45.95,21.78l5.61,2.25c.52.21,1.1-.04,1.31-.55s-.04-1.09-.56-1.3l-5.61-2.25c-.52-.21-1.1.04-1.31.55-.21.51.04,1.09.56,1.3ZM54.44,19.77c.34.44.98.51,1.42.17.44-.34.52-.97.17-1.4l-3.73-4.73c-.34-.44-.98-.51-1.42-.17-.44.34-.52.97-.17,1.4l3.73,4.73ZM60.03,17.94c.55-.08.94-.58.86-1.13l-.84-5.94c-.08-.55-.59-.93-1.14-.85-.55.08-.94.58-.86,1.13l.84,5.94c.08.55.59.93,1.14.85ZM60.32,33.23c.53,1.11.35,2.48-.58,3.41l-6.42,6.36c-1.18,1.17-3.1,1.17-4.28,0l-2.14-2.12c-1.18-1.17-1.18-3.07,0-4.24l6.42-6.36c.93-.92,2.31-1.11,3.44-.58l2.2-2.18c-2.36-1.67-5.65-1.47-7.77.64l-6.42,6.36c-2.36,2.34-2.36,6.14,0,8.49l2.14,2.12c2.36,2.34,6.2,2.34,8.56,0l6.42-6.36c2.12-2.1,2.32-5.36.64-7.71l-2.2,2.18ZM82.21,18.1l-1.51-2.6c-1.67-2.87-5.37-3.85-8.27-2.2l-7.86,4.5c-2.6,1.49-3.64,4.59-2.63,7.28l2.69-1.54c-.23-1.21.31-2.49,1.45-3.14l7.86-4.5c1.45-.83,3.3-.34,4.13,1.1l1.51,2.6c.84,1.43.34,3.27-1.11,4.1l-7.86,4.5c-1.14.65-2.52.48-3.47-.32l-2.69,1.54c1.85,2.22,5.08,2.87,7.67,1.38l7.86-4.5c2.89-1.66,3.89-5.33,2.22-8.2ZM78.54,35.26l-5.57-2.2c-.51-.2-1.1.05-1.31.56s.03,1.09.55,1.29l5.57,2.2c.51.2,1.1-.05,1.31-.56s-.03-1.09-.55-1.29ZM64.51,39.16c-.55.08-.94.58-.86,1.13l.8,5.89c.07.54.58.92,1.13.84s.94-.58.86-1.13l-.8-5.89c-.07-.54-.58-.92-1.13-.84ZM70.09,37.31c-.34-.44-.98-.51-1.42-.17-.44.34-.52.97-.17,1.4l3.67,4.65c.34.44.98.51,1.42.17s.52-.97.17-1.4l-3.67-4.65Z" />
+          </g>
+        </svg>
+
+        <!-- Wi-Fi signal -->
+        <svg class="wifi-symbol" viewBox="5 19 54 41" xmlns="http://www.w3.org/2000/svg" role="img">
+          <title id="wifiTitle">Wi-Fi signal: unknown</title>
+          <path id="wifiLevel5" d="M8 32 A33 32 0 0 1 56 32" stroke="#ccc" stroke-width="4" fill="none" />
+          <path id="wifiLevel4" d="M14 38 A26 26 0 0 1 50 38" stroke="#ccc" stroke-width="4" fill="none" />
+          <path id="wifiLevel3" d="M20 44 A18 20 0 0 1 44 44" stroke="#ccc" stroke-width="4" fill="none" />
+          <path id="wifiLevel2" d="M26 50 A10 14 0 0 1 38 50" stroke="#ccc" stroke-width="4" fill="none" />
+          <circle id="wifiLevel1" cx="32" cy="56" r="3" fill="#ccc" />
+        </svg>
+      </div>
+
+      <form id='settings-form' method='POST' onsubmit='return submitOptions(event);'>
+        <p id="settings-status" class="status-pill" role="status">Loading settings...</p>
+        <fieldset id="settings-fields" class="plain-fieldset" disabled>
+
+          <details class="collapse" name="sections" open>
+            <summary>Fan Control</summary>
+            <div>
+              <div class="toggle-switch synchronization-row">
+                <label for="fansSynchronized">Synchronize Fans</label>
+                <label class="switch">
+                  <input type="checkbox" id="fansSynchronized" name="fansSynchronized" role="switch" aria-label="Synchronize Fans" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <section class="fan-features">
+                <div id="fan1FeaturesTitle" class="detailSplitter" hidden></div>
+                <div class="option-row static-speed-row">
+                  <label for="staticfan">Static Fan Speed</label>
+                  <div class="fan-parameters static-speed-values">
+                    <input type="number" id="staticfanspeed" name="staticfanspeed" min="0" max="100" step="1" value="0" required aria-label="Fan 1 static speed percent">
+                    <span>%</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="staticfan" name="staticfan" role="switch" aria-label="Fan 1 static speed On/Off">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="option-row follow-fan-row">
+                  <label for="followPrinterFan">Follow Printer Fan</label>
+                  <select class="fan-parameters" id="printerFanSource" name="printerFanSource" aria-label="Fan 1 printer fan source">
+                    <option value="part">Part Cooling Fan</option>
+                    <option value="auxiliary">Auxiliary Cooling Fan</option>
+                    <option value="chamber" selected>Chamber/Exhaust Fan</option>
+                    <option value="heatbreak">Hotend/Heatbreak Fan</option>
+                  </select>
+                  <label class="switch">
+                    <input type="checkbox" id="followPrinterFan" name="followPrinterFan" role="switch" aria-label="Fan 1 follow printer fan On/Off">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="option-row post-print-row">
+                  <label for="postPrint">Post Print</label>
+                  <div class="fan-parameters post-print-values">
+                    <span>Run for</span>
+                    <input type="number" id="postPrintSeconds" name="postPrintSeconds" min="1" max="86400" step="1" value="600" required aria-label="Fan 1 Post Print seconds">
+                    <span>seconds at</span>
+                    <input type="number" id="postPrintSpeed" name="postPrintSpeed" min="0" max="100" step="1" value="100" required aria-label="Fan 1 Post Print percent">
+                    <span>%</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="postPrint" name="postPrint" role="switch" aria-label="Fan 1 Post Print On/Off">
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </section>
+              <section id="fan2Features" class="fan-features" hidden>
+                <div class="detailSplitter">Fan 2</div>
+                <div class="option-row static-speed-row">
+                  <label for="staticfan2">Static Fan Speed</label>
+                  <div class="fan-parameters static-speed-values">
+                    <input type="number" id="staticfanspeed2" name="staticfanspeed2" min="0" max="100" step="1" value="0" required aria-label="Fan 2 static speed percent" disabled>
+                    <span>%</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="staticfan2" name="staticfan2" role="switch" aria-label="Fan 2 static speed On/Off" disabled>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="option-row follow-fan-row">
+                  <label for="followPrinterFan2">Follow Printer Fan</label>
+                  <select class="fan-parameters" id="printerFanSource2" name="printerFanSource2" aria-label="Fan 2 printer fan source" disabled>
+                    <option value="part">Part Cooling Fan</option>
+                    <option value="auxiliary">Auxiliary Cooling Fan</option>
+                    <option value="chamber" selected>Chamber/Exhaust Fan</option>
+                    <option value="heatbreak">Hotend/Heatbreak Fan</option>
+                  </select>
+                  <label class="switch">
+                    <input type="checkbox" id="followPrinterFan2" name="followPrinterFan2" role="switch" aria-label="Fan 2 follow printer fan On/Off" disabled>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="option-row post-print-row">
+                  <label for="postPrint2">Post Print</label>
+                  <div class="fan-parameters post-print-values">
+                    <span>Run for</span>
+                    <input type="number" id="postPrintSeconds2" name="postPrintSeconds2" min="1" max="86400" step="1" value="600" required aria-label="Fan 2 Post Print seconds" disabled>
+                    <span>seconds at</span>
+                    <input type="number" id="postPrintSpeed2" name="postPrintSpeed2" min="0" max="100" step="1" value="100" required aria-label="Fan 2 Post Print percent" disabled>
+                    <span>%</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="postPrint2" name="postPrint2" role="switch" aria-label="Fan 2 Post Print On/Off" disabled>
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </section>
             </div>
-          </div>
-          <div class="section">
-            <button id="createPointBtn" disabled>Create New Point</button>
-          </div>
-          <div class="section" id="editSection" style="display:none;">
-            <h3 id="pointHeading">Selected Point</h3>
-            <label for="edit-temp">Temperature (°C):</label>
-            <input
-              id="edit-temp"
-              type="number"
-              min="0"
-              max="400"
-              step="any"
-              placeholder="e.g. 75"
-            >
-            <br/>
-            <label for="edit-speed">Fan Speed (%):</label>
-            <input
-              id="edit-speed"
-              type="number"
-              min="0"
-              max="100"
-              step="1"
-              placeholder="e.g. 40"
-            >
-            <br/>
-            <button id="editPointBtn">Change</button>
-            <button id="removePointBtn" style="background: var(--color-error);">
-              Remove
-            </button>
-          </div>
-        </div>
-        <div class="section telemetry">
-          <div>Nozzle Temperature: <span id="tempValue">-</span> °C</div>
-          <div><span id="speedLabel">Both fans</span>: <span id="speedValue">-</span> %</div>
-          <div id="speed2Row" hidden>Fan 2: <span id="speedValue2">-</span> %</div>
-        </div>
-      </div><!-- .form-container -->
-    </div>
+          </details>
 
-    <div id="toggleTab" class="tab-content active">
-      <div class="toggles-container">
-        <form id='settings-form' method='POST' onsubmit='return submitOptions(event);'>
-          <h1>Settings</h1>
-          <p id="settings-status" role="status">Loading settings...</p>
-          <fieldset id="settings-fields" disabled>
-          <section class="printer-information">
-            <h2>Printer Information</h2>
-            <div class="printer-option-row">
+          <details id="curvesDetails" class="collapse" name="sections">
+            <summary>Fan Curves</summary>
+            <div class="curve-editor">
+              <div class="chart-container">
+                <canvas id="myChart"></canvas>
+              </div>
+              <p id="mode-status" class="field-help" role="status"></p>
+              <p id="curve-status" class="field-help" role="status">Loading fan curves...</p>
+              <button type="button" id="retryCurves" hidden>Retry loading curves</button>
+              <div id="fanSelectorRow" class="toggle-switch" hidden>
+                <label for="selectedFan">Edit curve</label>
+                <span class="switch-pair">
+                  <span class="toggle-label">Fan 1</span>
+                  <label class="switch">
+                    <input type="checkbox" id="selectedFan" role="switch" aria-label="Edit Fan 2 curve" disabled>
+                    <span class="slider"></span>
+                  </label>
+                  <span class="toggle-label">Fan 2</span>
+                </span>
+              </div>
+              <button type="button" id="createPointBtn" disabled>Create New Point</button>
+              <div id="editSection" class="point-fields" style="display:none;">
+                <div id="pointHeading" class="detailSplitter">Selected Point</div>
+                <div class="input-inline-group">
+                  <label for="edit-temp">Temperature (°C)</label>
+                  <input id="edit-temp" type="number" min="0" max="400" step="any" placeholder="e.g. 75">
+                </div>
+                <div class="input-inline-group">
+                  <label for="edit-speed">Fan Speed (%)</label>
+                  <input id="edit-speed" type="number" min="0" max="100" step="1" placeholder="e.g. 40">
+                </div>
+                <div class="button-row">
+                  <button type="button" id="editPointBtn">Change</button>
+                  <button type="button" id="removePointBtn">Remove</button>
+                </div>
+              </div>
+              <div class="telemetry">
+                <div>Nozzle Temperature: <span id="tempValue">-</span> °C</div>
+                <div><span id="speedLabel">Both fans</span>: <span id="speedValue">-</span> %</div>
+                <div id="speed2Row" hidden>Fan 2: <span id="speedValue2">-</span> %</div>
+              </div>
+            </div>
+          </details>
+
+          <details class="collapse" name="sections">
+            <summary>Printer</summary>
+            <div>
               <label for="printerip">Printer IP</label>
               <input type='text' id='printerip' name='ip' title='Enter the IP address of your Bambulab Printer' value=''>
-            </div>
-            <div class="printer-option-row">
               <label for="printercode">Printer Access Code</label>
               <input type='text' id='printercode' name='code' title='Enter the access code of your Bambulab Printer' value=''>
-            </div>
-            <div class="printer-option-row">
               <label for="printerserial">Printer Serial Number</label>
               <input type='text' id='printerserial' name='serial' title='Enter the serial Number for your Bambulab Printer' value=''>
             </div>
-          </section>
+          </details>
 
-          <div class="synchronization-row">
-            <label class="switch">
-              <input type="checkbox" id="fansSynchronized" name="fansSynchronized" role="switch" aria-label="Synchronize Fans" checked>
-              <span class="slider round"></span>
-            </label>
-            <label for="fansSynchronized">Synchronize Fans</label>
-          </div>
-          <section class="fan-features">
-            <h2 id="fan1FeaturesTitle" hidden></h2>
-            <div class="fan-option-row static-speed-row">
-              <label class="switch">
-                <input type="checkbox" id="staticfan" name="staticfan" role="switch" aria-label="Fan 1 static speed On/Off">
-                <span class="slider round"></span>
-              </label>
-              <label for="staticfan">Static Fan Speed</label>
-              <div class="fan-parameters static-speed-values">
-                <input type="number" id="staticfanspeed" name="staticfanspeed" min="0" max="100" step="1" value="0" required aria-label="Fan 1 static speed percent">
-                <span>%</span>
+          <details class="collapse" name="sections">
+            <summary>Home Assistant</summary>
+            <div>
+              <div class="toggle-switch">
+                <label for="haEnabled">Connect to MQTT Broker</label>
+                <label class="switch">
+                  <input type="checkbox" id="haEnabled" name="haEnabled" role="switch" aria-label="Home Assistant MQTT On/Off">
+                  <span class="slider"></span>
+                </label>
               </div>
-            </div>
-            <div class="fan-option-row follow-fan-row">
-              <label class="switch">
-                <input type="checkbox" id="followPrinterFan" name="followPrinterFan" role="switch" aria-label="Fan 1 follow printer fan On/Off">
-                <span class="slider round"></span>
-              </label>
-              <label for="followPrinterFan">Follow Printer Fan</label>
-              <select class="fan-parameters" id="printerFanSource" name="printerFanSource" aria-label="Fan 1 printer fan source">
-                <option value="part">Part Cooling Fan</option>
-                <option value="auxiliary">Auxiliary Cooling Fan</option>
-                <option value="chamber" selected>Chamber/Exhaust Fan</option>
-                <option value="heatbreak">Hotend/Heatbreak Fan</option>
-              </select>
-            </div>
-            <div class="fan-option-row post-print-row">
-              <label class="switch">
-                <input type="checkbox" id="postPrint" name="postPrint" role="switch" aria-label="Fan 1 Post Print On/Off">
-                <span class="slider round"></span>
-              </label>
-              <label for="postPrint">Post Print</label>
-              <div class="fan-parameters post-print-values">
-                <span>Run for</span>
-                <input type="number" id="postPrintSeconds" name="postPrintSeconds" min="1" max="86400" step="1" value="600" required aria-label="Fan 1 Post Print seconds">
-                <span>seconds at</span>
-                <input type="number" id="postPrintSpeed" name="postPrintSpeed" min="0" max="100" step="1" value="100" required aria-label="Fan 1 Post Print percent">
-                <span>%</span>
-              </div>
-            </div>
-          </section>
-          <section id="fan2Features" class="fan-features" hidden>
-            <h2>Fan 2</h2>
-            <div class="fan-option-row static-speed-row">
-              <label class="switch">
-                <input type="checkbox" id="staticfan2" name="staticfan2" role="switch" aria-label="Fan 2 static speed On/Off" disabled>
-                <span class="slider round"></span>
-              </label>
-              <label for="staticfan2">Static Fan Speed</label>
-              <div class="fan-parameters static-speed-values">
-                <input type="number" id="staticfanspeed2" name="staticfanspeed2" min="0" max="100" step="1" value="0" required aria-label="Fan 2 static speed percent" disabled>
-                <span>%</span>
-              </div>
-            </div>
-            <div class="fan-option-row follow-fan-row">
-              <label class="switch">
-                <input type="checkbox" id="followPrinterFan2" name="followPrinterFan2" role="switch" aria-label="Fan 2 follow printer fan On/Off" disabled>
-                <span class="slider round"></span>
-              </label>
-              <label for="followPrinterFan2">Follow Printer Fan</label>
-              <select class="fan-parameters" id="printerFanSource2" name="printerFanSource2" aria-label="Fan 2 printer fan source" disabled>
-                <option value="part">Part Cooling Fan</option>
-                <option value="auxiliary">Auxiliary Cooling Fan</option>
-                <option value="chamber" selected>Chamber/Exhaust Fan</option>
-                <option value="heatbreak">Hotend/Heatbreak Fan</option>
-              </select>
-            </div>
-            <div class="fan-option-row post-print-row">
-              <label class="switch">
-                <input type="checkbox" id="postPrint2" name="postPrint2" role="switch" aria-label="Fan 2 Post Print On/Off" disabled>
-                <span class="slider round"></span>
-              </label>
-              <label for="postPrint2">Post Print</label>
-              <div class="fan-parameters post-print-values">
-                <span>Run for</span>
-                <input type="number" id="postPrintSeconds2" name="postPrintSeconds2" min="1" max="86400" step="1" value="600" required aria-label="Fan 2 Post Print seconds" disabled>
-                <span>seconds at</span>
-                <input type="number" id="postPrintSpeed2" name="postPrintSpeed2" min="0" max="100" step="1" value="100" required aria-label="Fan 2 Post Print percent" disabled>
-                <span>%</span>
-              </div>
-            </div>
-          </section>
-
-          <section class="home-assistant">
-            <h2>Home Assistant</h2>
-            <div class="fan-option-row">
-              <label class="switch">
-                <input type="checkbox" id="haEnabled" name="haEnabled" role="switch" aria-label="Home Assistant MQTT On/Off">
-                <span class="slider round"></span>
-              </label>
-              <label for="haEnabled">Connect to MQTT Broker</label>
-            </div>
-            <p id="ha-status" role="status"></p>
-            <fieldset id="haFields" class="ha-fields" hidden disabled>
-              <div class="printer-option-row">
+              <p id="ha-status" class="field-help" role="status"></p>
+              <fieldset id="haFields" class="plain-fieldset" hidden disabled>
+                <div class="detailSplitter">Home Assistant MQTT</div>
                 <label for="haHost">Broker Host</label>
                 <input type='text' id='haHost' name='haHost' maxlength='64' placeholder='homeassistant.local' title='Host name or IP address of your MQTT broker'>
-              </div>
-              <div class="printer-option-row">
                 <label for="haPort">Broker Port</label>
                 <input type="number" id="haPort" name="haPort" min="1" max="65535" step="1" value="1883" required>
-              </div>
-              <div class="printer-option-row">
                 <label for="haUser">Username</label>
                 <input type='text' id='haUser' name='haUser' maxlength='64' autocomplete='off'>
-              </div>
-              <div class="printer-option-row">
                 <label for="haPassword">Password</label>
                 <input type="password" id="haPassword" name="haPassword" maxlength="64" autocomplete="new-password">
-              </div>
-              <p class="field-help">Fan controls and sensors appear in Home Assistant through MQTT Discovery. The connection is not encrypted, so give the controller its own broker account.</p>
-            </fieldset>
-          </section>
+                <small>Fan controls and sensors appear in Home Assistant through MQTT Discovery. The connection is not encrypted, so give the controller its own broker account.</small>
+              </fieldset>
+            </div>
+          </details>
 
-          <section class="web-login">
-            <h2>Web Page Login</h2>
-            <p id="login-status" class="field-help"></p>
-            <div class="printer-option-row">
+          <details class="collapse" name="sections">
+            <summary>Web Page Login</summary>
+            <div>
+              <p id="login-status" class="field-help"></p>
               <label for="webUser">Username</label>
               <input type='text' id='webUser' name='webUser' maxlength='32' autocomplete='username'>
-            </div>
-            <div class="printer-option-row">
               <label for="webPassword">Password</label>
               <input type="password" id="webPassword" name="webPassword" maxlength="64" autocomplete="new-password">
+              <small>Leave the password blank to keep the saved one, or clear the username to remove the login. If you forget it, run the USB Wi-Fi setup again, which clears the login.</small>
             </div>
-            <p class="field-help">Leave the password blank to keep the saved one, or clear the username to remove the login. If you forget it, run the USB Wi-Fi setup again, which clears the login.</p>
-          </section>
+          </details>
+        </fieldset>
 
-          <h2>Debugging</h2>
-          <div class="fan-option-row">
-            <label class="switch">
-              <input type="checkbox" id="debuging" name="debuging">
-              <span class="slider round"></span>
-            </label>
-            <label for="debuging">Debugging</label>
+        <details id="debugDiagDetails" class="collapse" name="sections">
+          <summary>Debug &amp; Diagnostics</summary>
+          <div>
+            <fieldset id="diagnostics-fields" class="plain-fieldset" disabled>
+              <div class="toggle-switch">
+                <label for="debuging">Debugging</label>
+                <label class="switch">
+                  <input type="checkbox" id="debuging" name="debuging">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-switch">
+                <label for="debugingchange">Debug OnChange Events</label>
+                <label class="switch">
+                  <input type="checkbox" id="debugingchange" name="debugingchange">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-switch">
+                <label for="mqttdebug">MQTT Logging</label>
+                <label class="switch">
+                  <input type="checkbox" id="mqttdebug" name="mqttdebug">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <small>These add detail to the Controller Log, under Device Tools.</small>
+
+              <div class="detailSplitter">Wi-Fi Radio</div>
+              <div class="input-inline-group">
+                <label for="wifiTxPower">Wi-Fi Transmit Power</label>
+                <select id="wifiTxPower" name="wifiTxPower">
+                  <option value="78" selected>19.5 dBm</option>
+                  <option value="68">17 dBm</option>
+                  <option value="60">15 dBm</option>
+                  <option value="52">13 dBm</option>
+                  <option value="44">11 dBm</option>
+                  <option value="34">8.5 dBm</option>
+                  <option value="20">5 dBm</option>
+                  <option value="8">2 dBm</option>
+                </select>
+              </div>
+              <div class="toggle-switch">
+                <label for="wifiSleep">Wi-Fi Modem Sleep</label>
+                <label class="switch">
+                  <input type="checkbox" id="wifiSleep" name="wifiSleep" role="switch" aria-label="Wi-Fi modem sleep On/Off" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <small>Lower transmit power can help a controller close to its access point. Turning modem sleep off can make the connection steadier and the pages quicker, using a little more power. Both apply when you save.</small>
+
+              <div class="detailSplitter">Subsystem Isolation</div>
+              <div class="toggle-switch">
+                <label for="printerConnection">Printer Connection</label>
+                <label class="switch">
+                  <input type="checkbox" id="printerConnection" name="printerConnection" role="switch" aria-label="Printer connection On/Off" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="toggle-switch">
+                <label for="ssdpEnabled">SSDP Discovery</label>
+                <label class="switch">
+                  <input type="checkbox" id="ssdpEnabled" name="ssdpEnabled" role="switch" aria-label="SSDP discovery On/Off" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <small>Turn a subsystem off to rule it out; changes apply when you save. Without the printer connection, the fans get no nozzle temperatures, printer fan speeds, or print endings. SSDP lets the xtouch screen find the controller.</small>
+            </fieldset>
+
+            <div class="detailSplitter">Runtime Status</div>
+            <div class="diag-wrapper">
+              <button type="button" id="refreshDiag" title="Refresh">&#8635;</button>
+              <div id="diagPanel" class="monospace-panel">Open this section to load the status.</div>
+            </div>
           </div>
-          <div class="fan-option-row">
-            <label class="switch">
-              <input type="checkbox" id="debugingchange" name="debugingchange">
-              <span class="slider round"></span>
-            </label>
-            <label for="debugingchange">Debug OnChange Events</label>
+        </details>
+
+        <details class="collapse" name="sections">
+          <summary>Device Tools</summary>
+          <div>
+            <a class="button" href="/update">Firmware Update</a>
+            <a class="button" href="/backuprestore">Backup &amp; Restore</a>
+            <a class="button" href="/webserial" target="_blank" rel="noopener">Controller Log</a>
+            <a class="button" href="https://dutchdevelop.com/smartflow-configuration-setup/" target="_blank" rel="noopener">Wi-Fi Setup over USB</a>
+            <button type="button" id="toolRestart" class="secondary">Restart Controller</button>
+            <p id="restart-status" class="field-help" role="status"></p>
           </div>
-          <div class="fan-option-row">
-            <label class="switch">
-              <input type="checkbox" id="mqttdebug" name="mqttdebug">
-              <span class="slider round"></span>
-            </label>
-            <label for="mqttdebug">MQTT Logging</label>
-          </div>
-          </fieldset>
-          <input type='submit' id='saveOptions' value='Save' disabled>
-        </form>
-      </div>
+        </details>
+
+        <input type='submit' id='saveOptions' value='Save Settings' disabled>
+      </form>
     </div>
-    <p id="firmwareversion"><span id="firmwareversionText">Firmware Version: Loading...</span> · <a href="/update">Update firmware</a></p>
-  </div> <!-- .container -->
-  <div id="save-notice" role="status" aria-live="polite" hidden></div>
+    <p id="firmwareversion" class="firmware-version"><span id="firmwareversionText">Firmware Version: Loading...</span></p>
+  </div>
+  <div id="save-notice" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script>
     const $ = id => document.getElementById(id);
-    const tabButtons = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
     let optionsLoaded = false;
     let optionsSaving = false;
     let fansSynchronized = true;
@@ -660,6 +426,7 @@
     let activeFollowSources = [null, null];
     let postPrintRemaining = [0, 0];
     let sensorRequestActive = false;
+    let diagRequestActive = false;
     let curves = [[], []];
     let curvesLoaded = false;
     let curveSaving = false;
@@ -718,6 +485,7 @@
 
     function updateControls() {
       $('settings-fields').disabled = !optionsLoaded || optionsSaving;
+      $('diagnostics-fields').disabled = !optionsLoaded || optionsSaving;
       $('saveOptions').disabled = !optionsLoaded || optionsSaving || curveSaving;
       renderFeatureSections();
       const editable = Boolean(canEditCurve());
@@ -775,11 +543,44 @@
       $('login-status').className = 'field-help' + (protectedPages ? '' : ' unprotected');
     }
 
-    function renderHomeAssistantStatus(status, state) {
-      $('ha-status').textContent = status === 'connected' ? 'Connected to the broker.'
+    function homeAssistantText(status, state) {
+      return status === 'connected' ? 'Connected to the broker.'
         : status === 'connecting' ? 'Connecting to the broker...'
         : status === 'disconnected' ? 'Not connected: ' + (haProblems[state] || 'retrying.')
         : '';
+    }
+
+    function renderHomeAssistantStatus(status, state) {
+      $('ha-status').textContent = homeAssistantText(status, state);
+    }
+
+    // Reaching the access point at -85 dBm counts as no bars and -60 dBm as full strength.
+    function signalPercent(rssi) {
+      return Math.max(0, Math.min(100, Math.round((rssi + 85) * 100 / 25)));
+    }
+
+    function renderStatusBar(sensor) {
+      const known = typeof sensor.rssi === 'number';
+      const percent = known ? signalPercent(sensor.rssi) : 0;
+      const level = known ? Math.min(4, Math.floor(percent / 25)) : -1;
+      const colors = ['#d32f2f', '#f57c00', '#f9a825', '#7cb342', '#2e7d32'];
+      for (let i = 0; i < 5; ++i) {
+        $('wifiLevel' + (i + 1)).setAttribute(i === 0 ? 'fill' : 'stroke', i <= level ? colors[level] : '#ccc');
+      }
+      $('wifiTitle').textContent = known ? `Wi-Fi signal: ${percent}% (${sensor.rssi} dBm)` : 'Wi-Fi signal: unknown';
+
+      const printerConnected = sensor.printerConnected === true;
+      $('printerOnline').style.display = printerConnected ? 'inline' : 'none';
+      $('printerOffline').style.display = printerConnected ? 'none' : 'inline';
+      $('printerTitle').textContent = 'Printer: ' + (!known ? 'unknown'
+        : sensor.printerConnection === false ? 'connection turned off'
+        : printerConnected ? 'connected' : 'not connected');
+
+      const haOn = sensor.homeAssistant === 'connected' || sensor.homeAssistant === 'connecting' || sensor.homeAssistant === 'disconnected';
+      $('haHouse').setAttribute('opacity', haOn ? '1' : '0.35');
+      $('haOnline').style.display = sensor.homeAssistant === 'connected' ? 'inline' : 'none';
+      $('haOffline').style.display = haOn && sensor.homeAssistant !== 'connected' ? 'inline' : 'none';
+      $('haTitle').textContent = 'Home Assistant: ' + (haOn ? homeAssistantText(sensor.homeAssistant, sensor.homeAssistantState) : 'off');
     }
 
     function markSettingsChanged() {
@@ -846,6 +647,8 @@
           $('postPrintSpeed' + suffix).value = config['postPrintSpeed' + sourceSuffix] ?? 100;
         }
         for (const name of ['debuging', 'debugingchange', 'mqttdebug']) $(name).checked = config[name] === true;
+        $('wifiTxPower').value = String(config.wifiTxPower ?? 78);
+        for (const name of ['wifiSleep', 'printerConnection', 'ssdpEnabled']) $(name).checked = config[name] !== false;
         $('haEnabled').checked = config.haEnabled === true;
         $('haHost').value = config.haHost || '';
         $('haPort').value = config.haPort || 1883;
@@ -877,11 +680,11 @@
       event.preventDefault();
       if (!optionsLoaded || optionsSaving || curveSaving || !$('settings-form').reportValidity()) return false;
       const parameters = new URLSearchParams(new FormData($('settings-form')));
-      parameters.set('fansSynchronized', $('fansSynchronized').checked ? 'on' : 'off');
-      parameters.set('staticfan', $('staticfan').checked ? 'on' : 'off');
-      parameters.set('followPrinterFan', $('followPrinterFan').checked ? 'on' : 'off');
-      parameters.set('postPrint', $('postPrint').checked ? 'on' : 'off');
-      parameters.set('haEnabled', $('haEnabled').checked ? 'on' : 'off');
+      // Unchecked switches are left out of a form, so send each one's state explicitly.
+      for (const name of ['fansSynchronized', 'staticfan', 'followPrinterFan', 'postPrint', 'haEnabled',
+                          'wifiSleep', 'printerConnection', 'ssdpEnabled']) {
+        parameters.set(name, $(name).checked ? 'on' : 'off');
+      }
       if (!$('fansSynchronized').checked) {
         parameters.set('staticfan2', $('staticfan2').checked ? 'on' : 'off');
         parameters.set('followPrinterFan2', $('followPrinterFan2').checked ? 'on' : 'off');
@@ -910,6 +713,7 @@
         showSaveNotice('Settings saved successfully.');
         updateOptions();
         fetchSensorData();
+        if ($('debugDiagDetails').open) refreshDiagnostics();
       };
       xhr.open('POST', '/submitOptions', true);
       xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
@@ -1045,6 +849,18 @@
       }
     }
 
+    function applyPointEdit() {
+      if (!canEditCurve() || (!creatingPoint && selectedIndex === null)) return;
+      const point = { temp: Number($('edit-temp').value), speed: Number($('edit-speed').value) };
+      if ($('edit-temp').value === '' || $('edit-speed').value === '') {
+        $('curve-status').textContent = 'Enter a temperature and speed.'; return;
+      }
+      const points = curves[selectedFan].map(point => ({ ...point }));
+      if (creatingPoint) points.push(point);
+      else points[selectedIndex] = point;
+      saveCurve(points);
+    }
+
     function setSpin(fan, speed) {
       const percent = Math.max(0, Math.min(100, speed));
       $('blades' + fan).style.animation = percent === 0 ? 'none' : `spin ${.5 + (1 - percent / 100) * 4.5}s linear infinite`;
@@ -1066,12 +882,80 @@
         postPrintRemaining = [sensor.postPrintRemaining || 0, sensor.postPrintRemaining2 || 0];
         renderFanSources();
         renderHomeAssistantStatus(sensor.homeAssistant, sensor.homeAssistantState);
+        renderStatusBar(sensor);
         checkSettingsRevision(sensor.settingsRevision);
       } catch (error) {
         postPrintRemaining = [0, 0];
         renderFanSources();
+        renderStatusBar({});
         console.error('Unable to refresh fan speeds:', error);
       } finally { sensorRequestActive = false; }
+    }
+
+    function formatUptime(seconds) {
+      const days = Math.floor(seconds / 86400);
+      const time = [Math.floor(seconds / 3600) % 24, Math.floor(seconds / 60) % 60, seconds % 60]
+        .map(value => String(value).padStart(2, '0')).join(':');
+      return (days ? days + ' d ' : '') + time;
+    }
+
+    function diagnosticsText(d) {
+      const kB = bytes => Math.round(bytes / 1024) + ' kB';
+      const onOff = value => value ? 'on' : 'off';
+      const printer = d.printerConnection === false ? 'connection turned off'
+        : d.printerConnected ? 'connected' : 'not connected (MQTT state ' + d.printerState + ')';
+      const lastReport = typeof d.lastPrinterReport === 'number' ? d.lastPrinterReport + ' s ago' : 'none since start';
+      const homeAssistant = d.homeAssistant === 'disabled' ? 'off' : homeAssistantText(d.homeAssistant, d.homeAssistantState);
+      return [
+        ['Wi-Fi', `${d.ssid} (${d.bssid}), channel ${d.channel}`],
+        ['Signal', `${d.rssi} dBm, ${signalPercent(d.rssi)}%`],
+        ['Radio', `transmit power ${d.wifiTxPower / 4} dBm, modem sleep ${onOff(d.wifiSleep)}`],
+        ['IP address', d.ip],
+        ['Printer', printer],
+        ['Reports', `${d.printerReportsPerMinute}/min, ${kB(d.printerBytesPerMinute)}/min; last ${lastReport}`],
+        ['Home Assistant', homeAssistant],
+        ['SSDP', onOff(d.ssdpEnabled)],
+        ['Memory', `free ${kB(d.freeHeap)}, lowest ${kB(d.minFreeHeap)}`],
+        ['Largest block', kB(d.maxAllocHeap)],
+        ['Uptime', formatUptime(d.uptime)],
+        ['Last reset', d.resetReason],
+        ['Firmware', d.firmware],
+      ].map(([name, value]) => (name + ':').padEnd(16, ' ') + value).join('\n');
+    }
+
+    async function refreshDiagnostics() {
+      if (diagRequestActive) return;
+      diagRequestActive = true;
+      try {
+        const response = await fetch('/diag');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        $('diagPanel').textContent = diagnosticsText(await response.json());
+      } catch (error) {
+        $('diagPanel').textContent = 'Unable to load the runtime status (' + error.message + '). Retrying.';
+      } finally { diagRequestActive = false; }
+    }
+
+    // After a restart, reload once the controller answers again.
+    function reloadWhenBack() {
+      setTimeout(async function poll() {
+        try {
+          if ((await fetch('/sensorData')).ok) { location.reload(); return; }
+        } catch (error) {}
+        setTimeout(poll, 2000);
+      }, 4000);
+    }
+
+    async function restartController() {
+      if (!confirm('Restart the controller now?')) return;
+      $('restart-status').textContent = 'Restarting...';
+      try {
+        const response = await fetch('/restart', { method: 'POST', headers: { [ownPageHeader]: '1' } });
+        if (!response.ok) throw new Error(await response.text() || 'The controller refused to restart.');
+        $('restart-status').textContent = 'The controller is restarting. This page reloads when it is back.';
+        reloadWhenBack();
+      } catch (error) {
+        $('restart-status').textContent = 'Unable to restart: ' + error.message;
+      }
     }
 
     $('fansSynchronized').addEventListener('change', () => {
@@ -1087,7 +971,11 @@
       }
       markSettingsChanged();
     });
-    $('settings-form').addEventListener('input', markSettingsChanged);
+    $('settings-form').addEventListener('input', event => {
+      // Curve points save on their own, so editing one leaves the settings unchanged.
+      if (event.target && event.target.closest && event.target.closest('.curve-editor')) return;
+      markSettingsChanged();
+    });
     $('haEnabled').addEventListener('change', () => { renderHomeAssistant(); markSettingsChanged(); });
     for (const suffix of ['', '2']) {
       $('postPrint' + suffix).addEventListener('change', markSettingsChanged);
@@ -1116,122 +1004,32 @@
       updateChart();
       updateControls();
     });
-    $('editPointBtn').addEventListener('click', () => {
-      if (!canEditCurve() || (!creatingPoint && selectedIndex === null)) return;
-      const point = { temp: Number($('edit-temp').value), speed: Number($('edit-speed').value) };
-      if ($('edit-temp').value === '' || $('edit-speed').value === '') {
-        $('curve-status').textContent = 'Enter a temperature and speed.'; return;
-      }
-      const points = curves[selectedFan].map(point => ({ ...point }));
-      if (creatingPoint) points.push(point);
-      else points[selectedIndex] = point;
-      saveCurve(points);
-    });
+    $('editPointBtn').addEventListener('click', applyPointEdit);
+    for (const id of ['edit-temp', 'edit-speed']) {
+      // Enter applies the point instead of submitting the settings.
+      $(id).addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        applyPointEdit();
+      });
+    }
     $('removePointBtn').addEventListener('click', () => {
       if (selectedIndex === null || !canEditCurve()) return;
       saveCurve(curves[selectedFan].filter((point, index) => index !== selectedIndex));
     });
     $('retryCurves').addEventListener('click', fetchFanConfig);
-    tabButtons.forEach(button => button.addEventListener('click', () => {
-      tabButtons.forEach(item => item.classList.remove('active'));
-      tabContents.forEach(item => item.classList.remove('active'));
-      button.classList.add('active');
-      $(button.dataset.tab).classList.add('active');
-      if (myChart && button.dataset.tab === 'fanGraphTab') myChart.resize();
-    }));
+    // A chart drawn while its section was closed has no size until it is shown.
+    $('curvesDetails').addEventListener('toggle', () => { if ($('curvesDetails').open && myChart) myChart.resize(); });
+    $('debugDiagDetails').addEventListener('toggle', () => { if ($('debugDiagDetails').open) refreshDiagnostics(); });
+    $('refreshDiag').addEventListener('click', refreshDiagnostics);
+    $('toolRestart').addEventListener('click', restartController);
     window.addEventListener('DOMContentLoaded', initChart);
     // Settings and telemetry start without waiting for images or the chart library.
     updateOptions();
     fetchSensorData();
     setInterval(fetchSensorData, 1000);
+    setInterval(() => { if ($('debugDiagDetails').open) refreshDiagnostics(); }, 5000);
   </script>
-
-  <!-- PARTICLE BACKGROUND SCRIPT -->
-  <script>
-    const canvas = document.getElementById('particleCanvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    let particlesArray = [];
-    const numberOfParticles = 100;
-
-    class Particle {
-      constructor(x, y, directionX, directionY, size, color) {
-        this.x = x;
-        this.y = y;
-        this.directionX = directionX;
-        this.directionY = directionY;
-        this.size = size;
-        this.color = color;
-      }
-      draw() {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
-        ctx.fill();
-      }
-      update() {
-        if (this.x + this.size > canvas.width || this.x - this.size < 0) {
-          this.directionX = -this.directionX;
-        }
-        if (this.y + this.size > canvas.height || this.y - this.size < 0) {
-          this.directionY = -this.directionY;
-        }
-        this.x += this.directionX;
-        this.y += this.directionY;
-        this.draw();
-      }
-    }
-
-    function init() {
-      particlesArray = [];
-      for (let i = 0; i < numberOfParticles; i++) {
-        const size = Math.random() * 5 + 1;
-        const x = Math.random() * (canvas.width - size * 2) + size;
-        const y = Math.random() * (canvas.height - size * 2) + size;
-        const directionX = (Math.random() * 0.5) - 0.25;
-        const directionY = (Math.random() * 0.5) - 0.25;
-        const color = 'rgba(255, 255, 255, 0.8)';
-        particlesArray.push(new Particle(x, y, directionX, directionY, size, color));
-      }
-    }
-
-    function connect() {
-      for (let a = 0; a < particlesArray.length; a++) {
-        for (let b = a; b < particlesArray.length; b++) {
-          let distance = (particlesArray[a].x - particlesArray[b].x) ** 2
-                       + (particlesArray[a].y - particlesArray[b].y) ** 2;
-          if (distance < (canvas.width / 7) * (canvas.height / 7)) {
-            let opacityValue = 1 - (distance / 20000);
-            ctx.strokeStyle = `rgba(255, 255, 255, ${opacityValue})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(particlesArray[a].x, particlesArray[a].y);
-            ctx.lineTo(particlesArray[b].x, particlesArray[b].y);
-            ctx.stroke();
-          }
-        }
-      }
-    }
-
-    function animate() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (let i = 0; i < particlesArray.length; i++) {
-        particlesArray[i].update();
-      }
-      connect();
-      requestAnimationFrame(animate);
-    }
-
-    window.addEventListener('resize', () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      init();
-    });
-
-    init();
-    animate();
-  </script>
+  <script src="/particles.js"></script>
 </body>
 </html>

@@ -8,15 +8,23 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <Update.h>
+#include "diagnostics.h"
 #include "filesystem.h"
 #include "fans.h"
 #include "home-assistant.h"
+#include "log-serial.h"
+#include "mqttmanager.h"
+#include "ssdp.h"
 
 
 WebServer webServer(80);
 
 #include "../www/fanpage.h"
 #include "../www/updatePage.h"
+#include "../www/backupRestore.h"
+#include "../www/webSerialPage.h"
+#include "../www/style.h"
+#include "../www/particles.h"
 #include "../www/favicon.h"
 
 // Requests that change something must carry this header, which the controller's own pages
@@ -44,17 +52,19 @@ bool allowRequest(bool change = false) {
     return refusal == 0;
 }
 
-void handleSetup(){
+// Pages and their shared style and script are stored gzipped.
+void sendCompressed(const char *type, const uint8_t *data, unsigned int length) {
     if (!allowRequest()) return;
     webServer.sendHeader(F("Content-Encoding"), F("gzip"));
-    webServer.send_P(200, "text/html", (const char*)fanpage_html_gz, (int)fanpage_html_gz_len);
+    webServer.send_P(200, type, (const char*)data, (int)length);
 }
 
-void handleUpdatePage() {
-    if (!allowRequest()) return;
-    webServer.sendHeader(F("Content-Encoding"), F("gzip"));
-    webServer.send_P(200, "text/html", (const char*)updatepage_html_gz, (int)updatepage_html_gz_len);
-}
+void handleSetup() { sendCompressed("text/html", fanpage_html_gz, fanpage_html_gz_len); }
+void handleUpdatePage() { sendCompressed("text/html", updatepage_html_gz, updatepage_html_gz_len); }
+void handleBackupPage() { sendCompressed("text/html", backupRestore_html_gz, backupRestore_html_gz_len); }
+void handleLogPage() { sendCompressed("text/html", webSerialPage_html_gz, webSerialPage_html_gz_len); }
+void handleStyle() { sendCompressed("text/css", style_css_gz, style_css_gz_len); }
+void handleScript() { sendCompressed("text/javascript", particles_js_gz, particles_js_gz_len); }
 
 bool updateAccepted = false;
 
@@ -64,24 +74,24 @@ void handleUpdateUpload() {
     if (upload.status == UPLOAD_FILE_START) {
         updateAccepted = requestRefusal(true) == 0;
         if (!updateAccepted) {
-            Serial.println(F("Refused firmware upload"));
+            LogSerial.println(F("Refused firmware upload"));
             return;
         }
-        Serial.printf("Update: %s\n", upload.filename.c_str());
+        LogSerial.printf("Update: %s\n", upload.filename.c_str());
         if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-            Update.printError(Serial);
+            Update.printError(LogSerial);
         }
     } else if (!updateAccepted) {
         return;
     } else if (upload.status == UPLOAD_FILE_WRITE) {
         if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-            Update.printError(Serial);
+            Update.printError(LogSerial);
         }
     } else if (upload.status == UPLOAD_FILE_END) {
         if (Update.end(true)) {
-            Serial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+            LogSerial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
         } else {
-            Update.printError(Serial);
+            Update.printError(LogSerial);
         }
     } else if (upload.status == UPLOAD_FILE_ABORTED) {
         // Otherwise the half-written update blocks the next one until a restart.
@@ -101,7 +111,7 @@ void handleUpdate() {
     webServer.sendHeader("Connection", "close");
     webServer.send(updated ? 200 : 500, "text/plain", updated ? "OK" : "FAIL");
     if (!updated) return; // Keep running the current firmware
-    Serial.println(F("Restarting Device"));
+    LogSerial.println(F("Restarting Device"));
     delay(1000);
     ESP.restart();
 }
@@ -160,6 +170,10 @@ void handleGetOptions(){
     doc["webUser"] = printerConfig.webUser;
     doc["webPasswordSet"] = strlen(printerConfig.webPassword) > 0;
     doc["settingsRevision"] = globalVariables.settingsRevision;
+    doc["wifiTxPower"] = printerConfig.wifiTxPower;
+    doc["wifiSleep"] = printerConfig.wifiSleep;
+    doc["printerConnection"] = printerConfig.printerConnection;
+    doc["ssdpEnabled"] = printerConfig.ssdpEnabled;
 
     // Debugging
     doc["debuging"] = printerConfig.debuging;
@@ -171,7 +185,7 @@ void handleGetOptions(){
     serializeJson(doc, jsonString);
     webServer.send(200, "application/json", jsonString);
 
-    Serial.println(F("Packet sent to setuppage"));
+    LogSerial.println(F("Packet sent to setuppage"));
 }
 
 // All web updates are staged, persisted, then applied to the running controller.
@@ -347,6 +361,13 @@ void submitOptions() {
         webServer.send(400, "text/plain", error);
         return;
     }
+    if (!readIntegerArgument("wifiTxPower", candidate.wifiTxPower, 0, 84) || !validWifiTxPower(candidate.wifiTxPower) ||
+        !readBoolArgument("wifiSleep", candidate.wifiSleep) ||
+        !readBoolArgument("printerConnection", candidate.printerConnection) ||
+        !readBoolArgument("ssdpEnabled", candidate.ssdpEnabled)) {
+        webServer.send(400, "text/plain", "Invalid Debug & Diagnostics settings; choose a listed transmit power");
+        return;
+    }
     candidate.debuging = (webServer.arg("debuging") == "on");
     candidate.debugingchange = (webServer.arg("debugingchange") == "on");
     candidate.mqttdebug = (webServer.arg("mqttdebug") == "on");
@@ -355,8 +376,16 @@ void submitOptions() {
         return;
     }
     const bool haChanged = haConnectionChanged(printerConfig, candidate);
+    const bool radioChanged = candidate.wifiTxPower != printerConfig.wifiTxPower || candidate.wifiSleep != printerConfig.wifiSleep;
+    const bool ssdpChanged = candidate.ssdpEnabled != printerConfig.ssdpEnabled;
     applySettings(std::move(candidate));
     if (haChanged) haSettingsChanged();
+    if (radioChanged) applyWifiRadioSettings();
+    if (ssdpChanged) {
+        if (printerConfig.ssdpEnabled) start_ssdp();
+        else SSDP.end();
+    }
+    // mqttloop opens or closes the printer connection on its next pass.
     webServer.send(200, "text/plain", "Settings saved");
 }
 
@@ -418,18 +447,169 @@ void handleSensorData() {
     doc["settingsRevision"] = globalVariables.settingsRevision;
     doc["homeAssistant"] = homeAssistantStatus();
     doc["homeAssistantState"] = haMqtt.state();
+    doc["rssi"] = WiFi.RSSI();
+    doc["printerConnection"] = printerConfig.printerConnection;
+    doc["printerConnected"] = mqttClient.connected();
     String response;
     serializeJson(doc, response);
     webServer.send(200, "application/json", response);
 }
 
+// The Runtime Status panel under Debug & Diagnostics.
+void handleDiag() {
+    if (!allowRequest()) return;
+    const uint32_t now = millis();
+    printerTraffic.roll(now);
+    JsonDocument doc;
+    doc["firmware"] = globalVariables.FWVersion;
+    doc["uptime"] = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
+    doc["resetReason"] = resetReasonName();
+    doc["ssid"] = WiFi.SSID();
+    doc["bssid"] = WiFi.BSSIDstr();
+    doc["channel"] = WiFi.channel();
+    doc["rssi"] = WiFi.RSSI();
+    doc["ip"] = WiFi.localIP().toString();
+    doc["wifiTxPower"] = static_cast<int>(WiFi.getTxPower());
+    doc["wifiSleep"] = WiFi.getSleep() != WIFI_PS_NONE;
+    doc["printerConnection"] = printerConfig.printerConnection;
+    doc["printerConnected"] = mqttClient.connected();
+    doc["printerState"] = mqttClient.state();
+    doc["printerReportsPerMinute"] = printerTraffic.lastMessages;
+    doc["printerBytesPerMinute"] = printerTraffic.lastBytes;
+    if (printerTraffic.reported) doc["lastPrinterReport"] = (now - printerTraffic.lastReport) / 1000;
+    else doc["lastPrinterReport"] = nullptr;
+    doc["homeAssistant"] = homeAssistantStatus();
+    doc["homeAssistantState"] = haMqtt.state();
+    doc["ssdpEnabled"] = printerConfig.ssdpEnabled;
+    doc["freeHeap"] = ESP.getFreeHeap();
+    doc["minFreeHeap"] = ESP.getMinFreeHeap();
+    doc["maxAllocHeap"] = ESP.getMaxAllocHeap();
+    doc["logBytes"] = LogSerial.total();
+    String response;
+    serializeJson(doc, response);
+    webServer.send(200, "application/json", response);
+}
+
+// The Controller Log page polls for the text logged after the position it last saw. This
+// handler logs nothing, so polling does not fill the log.
+void handleLog() {
+    if (!allowRequest()) return;
+    const uint32_t from = webServer.hasArg("from") ? strtoul(webServer.arg("from").c_str(), nullptr, 10) : 0;
+    String text;
+    const uint32_t start = LogSerial.read(from, text);
+    webServer.sendHeader(F("X-Log-Start"), String(start));
+    webServer.sendHeader(F("X-Log-Next"), String(LogSerial.total()));
+    webServer.sendHeader(F("Cache-Control"), F("no-store"));
+    webServer.send(200, "text/plain; charset=utf-8", text);
+}
+
+// The file holds the Wi-Fi password, the printer access code, and the other passwords in plain
+// text, so it is offered only behind the login.
+void handleDownloadConfig() {
+    if (!allowRequest()) return;
+    if (!loginRequired()) {
+        webServer.send(403, "text/plain", "Set a Web Page Login before downloading a backup, because the backup contains your passwords");
+        return;
+    }
+    File file = LittleFS.open(configPath, "r");
+    if (!file) {
+        webServer.send(404, "text/plain", "No settings have been saved yet");
+        return;
+    }
+    const size_t size = file.size();
+    std::unique_ptr<char[]> buf(new char[size + 1]);
+    buf[file.readBytes(buf.get(), size)] = '\0';
+    file.close();
+    webServer.sendHeader(F("Content-Disposition"), F("attachment; filename=\"blsmartflow-settings.json\""));
+    webServer.sendHeader(F("Cache-Control"), F("no-store"));
+    webServer.send(200, "application/json", buf.get());
+}
+
+// A restore is written to a separate file and replaces the settings only once it reads as
+// settings, so a wrong or cut-off file changes nothing.
+const char *restorePath = "/blledconfig.json.upload";
+bool restoreAllowed = false;
+const char *restoreResult = nullptr; // nullptr until decided, "" once restored, otherwise why it was refused
+File restoreFile;
+size_t restoreBytes = 0;
+
+void refuseRestore(const char *why) {
+    if (restoreFile) restoreFile.close();
+    LittleFS.remove(restorePath);
+    restoreResult = why;
+    LogSerial.print(F("Settings restore refused: "));
+    LogSerial.println(why);
+}
+
+// The upload runs before handleConfigRestore, so check the request before writing anything.
+void handleConfigRestoreUpload() {
+    HTTPUpload& upload = webServer.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+        restoreResult = nullptr;
+        restoreBytes = 0;
+        restoreAllowed = requestRefusal(true) == 0;
+        if (!restoreAllowed) return;
+        restoreFile = LittleFS.open(restorePath, "w");
+        if (!restoreFile) refuseRestore("Could not write to the controller's storage; nothing was changed");
+    } else if (!restoreAllowed || restoreResult) {
+        return;
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+        restoreBytes += upload.currentSize;
+        if (restoreBytes > settingsFileMaxBytes) {
+            refuseRestore("The file is too large to be BL Smart Flow+ settings; nothing was changed");
+        } else if (restoreFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            refuseRestore("Could not write to the controller's storage; nothing was changed");
+        }
+    } else if (upload.status == UPLOAD_FILE_END) {
+        restoreFile.close();
+        if (!isSettingsFile(restorePath)) {
+            refuseRestore("This is not a BL Smart Flow+ settings file; nothing was changed");
+        } else if (!LittleFS.rename(restorePath, configPath)) {
+            refuseRestore("Could not replace the saved settings; nothing was changed");
+        } else {
+            restoreResult = "";
+            LogSerial.println(F("Settings restored from a backup"));
+        }
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+        refuseRestore("The upload was interrupted; nothing was changed");
+    }
+}
+
+void handleConfigRestore() {
+    if (!allowRequest(true)) return;
+    const char *result = restoreAllowed ? restoreResult : nullptr;
+    restoreAllowed = false;
+    restoreResult = nullptr;
+    if (!result) {
+        webServer.send(400, "text/plain", "Choose a settings file to restore");
+        return;
+    }
+    if (*result) {
+        webServer.send(400, "text/plain", result);
+        return;
+    }
+    webServer.sendHeader("Connection", "close");
+    webServer.send(200, "text/plain", "Settings restored. The controller is restarting.");
+    delay(1000);
+    ESP.restart();
+}
+
+void handleRestart() {
+    if (!allowRequest(true)) return;
+    LogSerial.println(F("Restart requested from the web page"));
+    webServer.sendHeader("Connection", "close");
+    webServer.send(200, "text/plain", "The controller is restarting.");
+    delay(1000);
+    ESP.restart();
+}
+
 void setupWebserver(){
     // Keep controlling the fans without the .local name rather than halting.
     if (!MDNS.begin(globalVariables.Host.c_str())) {
-        Serial.println(F("Error setting up MDNS responder; use the IP address instead"));
+        LogSerial.println(F("Error setting up MDNS responder; use the IP address instead"));
     }
     
-    Serial.println(F("Setting up webserver"));
+    LogSerial.println(F("Setting up webserver"));
 
     // The server keeps only the request headers it is told to; it always keeps Authorization.
     const char *headers[] = {ownPageHeader};
@@ -440,6 +620,8 @@ void setupWebserver(){
         webServer.sendHeader(F("Content-Encoding"), F("gzip"));
         webServer.send_P(200, "image/x-icon", (const char*)favicon_ico_gz, (int)favicon_ico_gz_len);
     });
+    webServer.on("/style.css", HTTP_GET, handleStyle);
+    webServer.on("/particles.js", HTTP_GET, handleScript);
     webServer.on("/submitOptions",HTTP_POST,submitOptions);
     webServer.on("/getOptions", handleGetOptions);
 
@@ -450,10 +632,19 @@ void setupWebserver(){
     webServer.on("/updateFanConfig", HTTP_POST, handleUpdateFanConfig);
     webServer.on("/sensorData", HTTP_GET, handleSensorData);
 
+    // Debug & Diagnostics, and Device Tools
+    webServer.on("/diag", HTTP_GET, handleDiag);
+    webServer.on("/log", HTTP_GET, handleLog);
+    webServer.on("/webserial", HTTP_GET, handleLogPage);
+    webServer.on("/backuprestore", HTTP_GET, handleBackupPage);
+    webServer.on("/configfile.json", HTTP_GET, handleDownloadConfig);
+    webServer.on("/configrestore", HTTP_POST, handleConfigRestore, handleConfigRestoreUpload);
+    webServer.on("/restart", HTTP_POST, handleRestart);
+
     webServer.begin();
 
-    Serial.println(F("Webserver started"));
-    Serial.println();
+    LogSerial.println(F("Webserver started"));
+    LogSerial.println();
 }
 
 void webserverloop(){

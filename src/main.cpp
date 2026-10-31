@@ -9,33 +9,34 @@
 #include "./blflow/ssdp.h"
 #include "./blflow/indicator.h"
 #include "./blflow/home-assistant.h"
+#include "./blflow/log-serial.h"
 
 int wifi_reconnect_count = 0;
 
 void setup(){
     Serial.begin(115200);
     delay(100);
-    Serial.println(F("Initializing"));
-    Serial.println(ESP.getFreeHeap());
-    Serial.println("");
-    Serial.print(F("** Using firmware version: "));
-    Serial.print(globalVariables.FWVersion);
-    Serial.println(F(" **"));
-    Serial.println("");
+    LogSerial.println(F("Initializing"));
+    LogSerial.println(ESP.getFreeHeap());
+    LogSerial.println("");
+    LogSerial.print(F("** Using firmware version: "));
+    LogSerial.print(globalVariables.FWVersion);
+    LogSerial.println(F(" **"));
+    LogSerial.println("");
     
     fansetup();
     indicatorsetup();
     delay(1000);
     setupFileSystem();
     loadFileSystem();
-    Serial.println(F(""));
+    LogSerial.println(F(""));
     delay(500);
 
     setupSerial();
 
     if (strlen(globalVariables.SSID) == 0 || strlen(globalVariables.APPW) == 0) {
         printerVariables.errorcode = "no config";
-        Serial.println(F("SSID or password is missing. Please configure both by going to: https://dutchdevelop.com/smartflow-configuration-setup/"));
+        LogSerial.println(F("SSID or password is missing. Please configure both by going to: https://dutchdevelop.com/smartflow-configuration-setup/"));
         return;
     }
     else if (printerVariables.errorcode == "no config"){
@@ -56,16 +57,16 @@ void setup(){
     
     setupWebserver();
     delay(500);
-    start_ssdp();
+    if (printerConfig.ssdpEnabled) start_ssdp();
     setupMqtt();
     setupHomeAssistant();
 
-    Serial.println();
-    Serial.print(F("** BLLED Controller started "));
-    Serial.print(F("using firmware version: "));
-    Serial.print(globalVariables.FWVersion);
-    Serial.println(F(" **"));
-    Serial.println();
+    LogSerial.println();
+    LogSerial.print(F("** BLLED Controller started "));
+    LogSerial.print(F("using firmware version: "));
+    LogSerial.print(globalVariables.FWVersion);
+    LogSerial.println(F(" **"));
+    LogSerial.println();
     globalVariables.started = true;
 }
 
@@ -80,10 +81,10 @@ void loop(){
         homeAssistantLoop();
 
         if (WiFi.status() != WL_CONNECTED){
-            Serial.print(F("Wifi connection dropped.  "));
-            Serial.print(F("Wifi Status: ")); 
-            Serial.println(wl_status_to_string(WiFi.status()));
-            Serial.println(F("Attempting to reconnect to WiFi..."));
+            LogSerial.print(F("Wifi connection dropped.  "));
+            LogSerial.print(F("Wifi Status: ")); 
+            LogSerial.println(wl_status_to_string(WiFi.status()));
+            LogSerial.println(F("Attempting to reconnect to WiFi..."));
             wifi_reconnect_count += 1;
             if(wifi_reconnect_count <= 2){
                 WiFi.disconnect();
@@ -100,7 +101,7 @@ void loop(){
     }
     if(printerConfig.rescanWiFiNetwork)
     {
-        Serial.println(F("Web submitted refresh of Wifi Scan (assigning Strongest AP)"));
+        LogSerial.println(F("Web submitted refresh of Wifi Scan (assigning Strongest AP)"));
         scanNetwork(); //Sets the MAC address for following connection attempt
         printerConfig.rescanWiFiNetwork = false;
     }

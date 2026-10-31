@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BL Smart Flow+ — Controller Log</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .log-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .log-toolbar button { width: auto; margin: 0; }
+    .log-toolbar .toggle-switch { margin: 0 0 0 auto; }
+    #log {
+      height: 65vh;
+      margin: 0 0 10px;
+      overflow: auto;
+      background: #1e1e1e;
+      color: #e0e0e0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: 12px/1.45 Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="particleCanvas"></canvas>
+  <div id="container" class="wide">
+    <div id="header">
+      <h1>Controller Log</h1>
+    </div>
+    <div class="form-container">
+      <div class="card-body">
+        <div class="log-toolbar">
+          <button type="button" id="pauseLog">Pause</button>
+          <button type="button" id="clearLog" class="secondary">Clear</button>
+          <button type="button" id="downloadLog" class="secondary">Download</button>
+          <div class="toggle-switch">
+            <label for="autoScroll">Follow new lines</label>
+            <label class="switch">
+              <input type="checkbox" id="autoScroll" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        <pre id="log"></pre>
+        <p id="log-status" class="status-pill" role="status">Connecting...</p>
+        <small>This is the controller's USB serial log. Turn on Debugging or MQTT Logging under Debug &amp; Diagnostics for more detail. The controller keeps only the last 8 KB, so a page that falls behind marks the gap.</small>
+        <a class="button secondary" href="/">Back to Settings</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const maxLength = 200000; // Characters kept on this page
+    let logText = '';
+    let position = 0;
+    let firstRead = true;
+    let paused = false;
+    let requestActive = false;
+
+    function show(text) {
+      if (!text) return;
+      logText = (logText + text).slice(-maxLength);
+      $('log').textContent = logText;
+      if ($('autoScroll').checked) $('log').scrollTop = $('log').scrollHeight;
+    }
+
+    async function poll() {
+      if (paused || requestActive) return;
+      requestActive = true;
+      try {
+        const response = await fetch('/log?from=' + position, { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const start = Number(response.headers.get('X-Log-Start'));
+        const next = Number(response.headers.get('X-Log-Next'));
+        const text = await response.text();
+        if (!firstRead && next < position) show('\n--- The controller restarted ---\n');
+        else if (!firstRead && start > position) show(`\n--- ${start - position} bytes were overwritten before this page read them ---\n`);
+        show(text);
+        position = next;
+        firstRead = false;
+        $('log-status').textContent = 'Live; updated every second.';
+      } catch (error) {
+        $('log-status').textContent = 'The controller is not responding (' + error.message + '). Retrying...';
+      } finally {
+        requestActive = false;
+      }
+    }
+
+    $('pauseLog').addEventListener('click', () => {
+      paused = !paused;
+      $('pauseLog').textContent = paused ? 'Resume' : 'Pause';
+      $('log-status').textContent = paused ? 'Paused. New lines are collected again when you resume, if the controller still has them.' : 'Resuming...';
+      if (!paused) poll();
+    });
+    $('clearLog').addEventListener('click', () => { logText = ''; $('log').textContent = ''; });
+    $('downloadLog').addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([logText], { type: 'text/plain' }));
+      link.download = 'blsmartflow-log.txt';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+
+    poll();
+    setInterval(poll, 1000);
+  </script>
+  <script src="/particles.js"></script>
+</body>
+</html>

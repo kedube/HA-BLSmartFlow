@@ -1,0 +1,250 @@
+/* Shared by the controller's pages. The layout and controls follow the BLLED controller's pages, in blue. */
+:root {
+  --primary: rgb(56, 137, 229);
+  --primary-dark: rgb(38, 103, 178);
+  --background: rgb(28, 75, 114);
+  --error: #c0392b;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  font-family: Arial, sans-serif;
+  background: var(--background);
+  color: #333;
+  margin: 0;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#particleCanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  background: var(--background);
+}
+
+#container { max-width: 480px; width: 100%; padding: 10px 0; }
+#container.wide { max-width: 960px; }
+
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+  color: white;
+}
+
+#header h1 { color: white; text-align: center; margin: 0; text-shadow: 1px 1px black; }
+
+.form-container {
+  background-color: #fff;
+  border-radius: 5px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+  color: #333;
+}
+
+.card-body, .form-container > form { padding: 10px; font-size: 14px; }
+.plain-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #ccc;
+}
+.status-bar svg { height: 36px; width: auto; }
+.status-bar .wifi-symbol { margin-left: auto; height: 30px; }
+
+label { display: block; font-weight: bold; margin-bottom: 5px; }
+
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="file"],
+select,
+textarea {
+  width: 100%;
+  padding: 6px;
+  margin-bottom: 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font: inherit;
+}
+
+button,
+input[type="submit"],
+a.button {
+  display: block;
+  width: 100%;
+  background-color: var(--primary);
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 14px;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+button:hover, input[type="submit"]:hover, a.button:hover { background-color: var(--primary-dark); }
+button:disabled, input[type="submit"]:disabled { background-color: #999; cursor: not-allowed; }
+button.secondary, a.button.secondary { background-color: #6c757d; }
+button.secondary:hover, a.button.secondary:hover { background-color: #565e64; }
+
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.toggle-switch > span,
+.toggle-switch > label:not(.switch) { flex-grow: 1; font-weight: 600; margin: 0; }
+.toggle-switch > label.switch { order: 9; flex-shrink: 0; }
+
+.input-inline-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.input-inline-group > label { flex-grow: 1; margin: 0; font-weight: 600; }
+.input-inline-group input,
+.input-inline-group select { width: auto; margin: 0; }
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 24px;
+  margin: 0;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 24px;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .slider { background-color: var(--primary); }
+input:checked + .slider:before { transform: translateX(26px); }
+input:focus-visible + .slider { outline: 2px solid var(--primary-dark); outline-offset: 2px; }
+input:disabled + .slider { cursor: default; opacity: .55; }
+
+/* Bottom margins only, so the gap stays even where a fieldset ends between sections. */
+details.collapse { margin: 0 0 10px; }
+details.collapse > summary {
+  font-weight: bold;
+  cursor: pointer;
+  background-color: #e0e0e0;
+  padding: 10px;
+  border-radius: 4px;
+  list-style: none;
+}
+details.collapse > summary::-webkit-details-marker { display: none; }
+details.collapse > summary::after { content: "\25B8"; float: right; transition: transform .2s; }
+details.collapse[open] > summary { background-color: #ccc; }
+details.collapse[open] > summary::after { transform: rotate(90deg); }
+details.collapse > div { padding: 12px 2px 2px; }
+details.collapse[open] > div { animation: reveal .3s ease; }
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.detailSplitter {
+  background-color: #ccc;
+  font-weight: bold;
+  text-align: center;
+  padding: 8px;
+  margin: 12px 0 8px;
+  border-radius: 4px;
+}
+
+small, .field-help { display: block; color: #666; font-size: .85em; margin: 2px 0 10px; }
+.warning { color: var(--error); }
+
+.status-pill {
+  font-weight: 600;
+  text-align: center;
+  margin: 0 0 10px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  background: #f0f0f0;
+  color: #444;
+  border: 1px solid #ddd;
+  font-size: .87em;
+}
+.status-pill:empty { display: none; }
+
+.monospace-panel {
+  font-family: monospace;
+  font-size: .82em;
+  background: #f7f7f7;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: calc(100% - 32px);
+  background-color: #28a745;
+  color: white;
+  padding: 14px 24px;
+  border-radius: 6px;
+  font-size: 15px;
+  text-align: center;
+  z-index: 9999;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  animation: toast-in .3s ease;
+}
+.toast::before { content: "\2705\00a0"; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(.9); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+progress { width: 100%; height: 15px; margin-bottom: 10px; }
+
+.firmware-version { color: white; text-align: center; font-size: .8rem; margin: 10px 0; }
+.firmware-version a { color: inherit; }
+
+@media (max-width: 400px) {
+  body { padding: 8px; }
+}

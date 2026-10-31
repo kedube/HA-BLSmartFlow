@@ -21,7 +21,13 @@ void reset() {
     webServer.responses.clear();
     pwmValues.clear();
     mockMillis = 0;
-    WiFi.connectionStatus = WL_CONNECTED;
+    WiFi = WiFiMock{};
+    SSDP = SSDPMock{};
+    mockResetReason = ESP_RST_POWERON;
+    mockUptimeMicros = 0;
+    LogSerial = LogSerialClass{};
+    printerTraffic = TrafficCounter{};
+    stream.flush();
     mqttClient.isConnected = true;
     mqttClient.connectResult = mqttClient.dropDuringLoop = false;
     mqttClient.beforeConnect = {};
@@ -37,8 +43,13 @@ void reset() {
     webServer.credentials = {};
     webServer.authenticationRequests = 0;
     webServer.upload() = HTTPUpload{};
+    webServer.responseHeaders.clear();
     Update = UpdateMock{};
     updateAccepted = false;
+    restoreAllowed = false;
+    restoreResult = nullptr;
+    restoreFile = File();
+    restoreBytes = 0;
     ESP.restarts = 0;
 }
 void putConfig(const std::string &json) {
@@ -99,11 +110,13 @@ template<class T> void check(const char *name, T test) {
 #include "post-print-tests.h"
 #include "home-assistant-tests.h"
 #include "web-security-tests.h"
+#include "diagnostics-tests.h"
 
 int main() {
     postPrintTests();
     homeAssistantTests();
     webSecurityTests();
+    diagnosticsTests();
     check("legacy settings leave following disabled", [] {
         putConfig(legacyConfig); reboot();
         assert(!printerConfig.followPrinterFan && !printerConfig.followPrinterFan2);

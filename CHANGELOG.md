@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.1 — 2026-10-31
+
+- Redesigned Settings after the BLLED controller's pages, keeping the blue background: one page with collapsible sections (Fan Control, Fan Curves, Printer, Home Assistant, Web Page Login, Debug & Diagnostics, and Device Tools), one open at a time. The Fan Graph tab is now the **Fan Curves** section, and pressing Enter in a point's fields applies the point. Switches sit on the right of their settings, and save confirmations appear in the middle of the page.
+- Added a status bar showing the Wi-Fi signal, the printer connection, and the Home Assistant connection, with details on hover.
+- Added **Debug & Diagnostics**, which gathers the debugging switches and adds Wi-Fi transmit power, Wi-Fi modem sleep, and switches to turn off the printer connection or SSDP discovery. These apply when saved. **Runtime Status** shows the Wi-Fi network and signal, printer reports per minute, Home Assistant, free memory, uptime, and why the controller last started, including crashes, brownouts, and watchdog resets.
+- Added **Device Tools**: Firmware Update, **Backup & Restore**, a live **Controller Log** in the browser, Wi-Fi Setup over USB, and **Restart Controller**. Downloading a backup requires a Web Page Login because the file contains your passwords. A restore replaces the settings only with a complete settings file.
+- Everything the controller logs now also goes to the Controller Log, which keeps the last 8 KB in memory.
+- The update, backup, and log pages share the new style.
+
 ## 1.4.13 — 2026-10-31
 
 - Added **Home Assistant** monitoring and control over a second MQTT connection, to your broker. MQTT Discovery creates sensors for nozzle temperature, both fan speeds, Post Print countdowns, and the printer connection, plus controls for synchronization and each fan's mode, static speed, printer fan source, and Post Print settings.

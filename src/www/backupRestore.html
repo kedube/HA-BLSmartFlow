@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BL Smart Flow+ — Backup &amp; Restore</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <canvas id="particleCanvas"></canvas>
+  <div id="container">
+    <div id="header">
+      <h1>Backup &amp; Restore</h1>
+    </div>
+    <div class="form-container">
+      <div class="card-body">
+        <div class="detailSplitter">Backup</div>
+        <button type="button" id="downloadBackup">Download Settings</button>
+        <small>The file contains your Wi-Fi password, printer access code, and the Home Assistant and login passwords in plain text, so keep it somewhere private. Downloading needs a Web Page Login, set in Settings.</small>
+        <p id="backup-status" class="status-pill" role="status"></p>
+
+        <div class="detailSplitter">Restore</div>
+        <form id="restoreForm">
+          <label for="settingsFile">Settings file</label>
+          <input type="file" id="settingsFile" accept=".json,application/json">
+          <button type="submit" id="restoreButton" disabled>Restore Settings</button>
+        </form>
+        <small class="warning">Restoring replaces every setting, including Wi-Fi, and restarts the controller. If the file's Wi-Fi settings don't work here, run the Wi-Fi setup over USB to recover.</small>
+        <p id="restore-status" class="status-pill" role="status"></p>
+
+        <a class="button secondary" href="/">Back to Settings</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    // The controller accepts changes only from its own pages, which send this header.
+    const ownPageHeader = 'X-BLSmartFlow';
+
+    $('downloadBackup').addEventListener('click', async () => {
+      $('backup-status').textContent = 'Preparing the backup...';
+      try {
+        const response = await fetch('/configfile.json', { cache: 'no-store' });
+        if (!response.ok) throw new Error(await response.text() || 'HTTP ' + response.status);
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(await response.blob());
+        link.download = 'blsmartflow-settings.json';
+        link.click();
+        URL.revokeObjectURL(link.href);
+        $('backup-status').textContent = 'Backup downloaded.';
+      } catch (error) {
+        $('backup-status').textContent = 'Unable to download: ' + error.message;
+      }
+    });
+
+    $('settingsFile').addEventListener('change', () => {
+      $('restoreButton').disabled = !$('settingsFile').files.length;
+      $('restore-status').textContent = '';
+    });
+
+    // After a restore the controller restarts; return to Settings once it answers again.
+    function returnWhenBack(attempts) {
+      setTimeout(async () => {
+        try {
+          if ((await fetch('/sensorData')).ok) {
+            $('restore-status').textContent = 'The controller is back. Opening Settings...';
+            location.href = '/';
+            return;
+          }
+        } catch (error) {}
+        if (attempts > 1) returnWhenBack(attempts - 1);
+        else $('restore-status').textContent = 'The controller has not come back. If its Wi-Fi changed, find its new address, or run the Wi-Fi setup over USB.';
+      }, 2000);
+    }
+
+    $('restoreForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const file = $('settingsFile').files[0];
+      if (!file) return;
+      if (!confirm('Replace all settings with ' + file.name + ' and restart the controller?')) return;
+      const body = new FormData();
+      body.append('settings', file, file.name);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/configrestore');
+      xhr.setRequestHeader(ownPageHeader, '1');
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          $('restore-status').textContent = xhr.responseText + ' Waiting for it to come back...';
+          returnWhenBack(30);
+        } else {
+          $('restore-status').textContent = 'Restore failed: ' + (xhr.responseText || xhr.status);
+          $('restoreButton').disabled = false;
+        }
+      };
+      xhr.onerror = () => {
+        $('restore-status').textContent = 'Restore failed: the controller could not be reached.';
+        $('restoreButton').disabled = false;
+      };
+      $('restoreButton').disabled = true;
+      $('restore-status').textContent = 'Uploading...';
+      xhr.send(body);
+    });
+  </script>
+  <script src="/particles.js"></script>
+</body>
+</html>

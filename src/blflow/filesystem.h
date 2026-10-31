@@ -8,12 +8,14 @@
 #include <LittleFS.h>
 #include "types.h"
 #include "fan-config.h"
+#include "diagnostics.h"
+#include "log-serial.h"
 #include <memory>
 
 const char *configPath = "/blledconfig.json";
 
 bool saveFileSystem(const PrinterConfig &config = printerConfig){
-    Serial.println(F("Saving config"));
+    LogSerial.println(F("Saving config"));
     
     JsonDocument json;
     json["ssid"] = globalVariables.SSID;
@@ -53,8 +55,12 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
     json["haPassword"] = config.haPassword;
     json["webUser"] = config.webUser;
     json["webPassword"] = config.webPassword;
+    json["wifiTxPower"] = config.wifiTxPower;
+    json["wifiSleep"] = config.wifiSleep;
+    json["printerConnection"] = config.printerConnection;
+    json["ssdpEnabled"] = config.ssdpEnabled;
     if (json.overflowed()) {
-        Serial.println(F("Not enough memory to save config"));
+        LogSerial.println(F("Not enough memory to save config"));
         return false;
     }
 
@@ -62,27 +68,27 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
     const char *tempPath = "/blledconfig.json.tmp";
     File configFile = LittleFS.open(tempPath, "w");
     if (!configFile) {
-        Serial.println(F("Failed to save config"));
+        LogSerial.println(F("Failed to save config"));
         return false;
     }
     const size_t bytesWritten = serializeJson(json, configFile);
     configFile.close();
     if (bytesWritten != measureJson(json)) {
         LittleFS.remove(tempPath);
-        Serial.println(F("Failed to write complete config"));
+        LogSerial.println(F("Failed to write complete config"));
         return false;
     }
     if (!LittleFS.rename(tempPath, configPath)) {
         LittleFS.remove(tempPath);
-        Serial.println(F("Failed to replace config"));
+        LogSerial.println(F("Failed to replace config"));
         return false;
     }
-    Serial.println(F("Config Saved"));
+    LogSerial.println(F("Config Saved"));
     return true;
 }
 
 void loadFileSystem(){
-    Serial.println(F("Loading config"));
+    LogSerial.println(F("Loading config"));
     
     File configFile;
     int attempts = 0;
@@ -92,21 +98,21 @@ void loadFileSystem(){
             break;
         }
         attempts++;
-        Serial.println(F("Failed to open config file, retrying.."));
+        LogSerial.println(F("Failed to open config file, retrying.."));
         delay(2000);
     }
     if (!configFile) {
-        Serial.print(F("Failed to open config file after "));
-        Serial.print(attempts);
-        Serial.println(F(" retries"));
+        LogSerial.print(F("Failed to open config file after "));
+        LogSerial.print(attempts);
+        LogSerial.println(F(" retries"));
         
-        Serial.println(F("Keeping defaults; config file left unchanged"));
+        LogSerial.println(F("Keeping defaults; config file left unchanged"));
         return;
     }
     size_t size = configFile.size();
     std::unique_ptr<char[]> buf(new char[size]);
     if (configFile.readBytes(buf.get(), size) != size) {
-        Serial.println(F("Incomplete config read; file left unchanged"));
+        LogSerial.println(F("Incomplete config read; file left unchanged"));
         configFile.close();
         return;
     }
@@ -134,12 +140,12 @@ void loadFileSystem(){
             loaded.followPrinterFan = false;
         }
         if (!readFanCurve(json["fanPoints"], loaded.fanGraph)) {
-            Serial.println(F("Missing or invalid Fan 1 curve; using default curve"));
+            LogSerial.println(F("Missing or invalid Fan 1 curve; using default curve"));
         }
         if (!json["fanPoints2"].isNull()) {
             if (!readFanCurve(json["fanPoints2"], loaded.fanGraph2)) {
                 loaded.fanGraph2 = defaultFanCurve();
-                Serial.println(F("Invalid Fan 2 curve; using default curve"));
+                LogSerial.println(F("Invalid Fan 2 curve; using default curve"));
             }
             loaded.staticFan2 = json["staticFan2"] | false;
             loaded.staticFanSpeed2 = clampFanSpeed(json["staticFanSpeed2"] | 0);
@@ -158,19 +164,43 @@ void loadFileSystem(){
         loaded.haEnabled = (json["haEnabled"] | false) && strlen(loaded.haHost) > 0;
         snprintf(loaded.webUser, sizeof(loaded.webUser), "%s", json["webUser"] | "");
         snprintf(loaded.webPassword, sizeof(loaded.webPassword), "%s", json["webPassword"] | "");
+        const int wifiTxPower = json["wifiTxPower"] | loaded.wifiTxPower;
+        if (validWifiTxPower(wifiTxPower)) loaded.wifiTxPower = wifiTxPower;
+        loaded.wifiSleep = json["wifiSleep"] | loaded.wifiSleep;
+        loaded.printerConnection = json["printerConnection"] | loaded.printerConnection;
+        loaded.ssdpEnabled = json["ssdpEnabled"] | loaded.ssdpEnabled;
         printerConfig = std::move(loaded);
 
-        Serial.println(F("Loaded config"));
+        LogSerial.println(F("Loaded config"));
     } else {
-        Serial.println(F("Failed loading config"));
-        Serial.println(F("Keeping defaults; config file left unchanged"));
+        LogSerial.println(F("Failed loading config"));
+        LogSerial.println(F("Keeping defaults; config file left unchanged"));
     }
 
     configFile.close();
 }
 
+// A restored file must look like this controller's settings before it replaces them.
+const size_t settingsFileMaxBytes = 16384;
+
+bool isSettingsFile(const char *path) {
+    File file = LittleFS.open(path, "r");
+    if (!file) return false;
+    const size_t size = file.size();
+    if (size == 0 || size > settingsFileMaxBytes) {
+        file.close();
+        return false;
+    }
+    std::unique_ptr<char[]> buf(new char[size]);
+    const bool complete = file.readBytes(buf.get(), size) == size;
+    file.close();
+    JsonDocument json;
+    return complete && !deserializeJson(json, buf.get(), size) &&
+        json["ssid"].is<const char *>() && json["printerIp"].is<const char *>();
+}
+
 void deleteFileSystem(){
-    Serial.println(F("Deleting LittleFS"));
+    LogSerial.println(F("Deleting LittleFS"));
     LittleFS.remove(configPath);
 }
 
@@ -179,16 +209,16 @@ bool hasFileSystem(){
 }
 
 void setupFileSystem(){
-    Serial.println(F("Mounting LittleFS"));
+    LogSerial.println(F("Mounting LittleFS"));
     if (!LittleFS.begin()) {
-        Serial.println(F("Failed to mount LittleFS"));
+        LogSerial.println(F("Failed to mount LittleFS"));
         LittleFS.format();
-        Serial.println(F("Formatting LittleFS"));
-        Serial.println(F("Restarting Device"));
+        LogSerial.println(F("Formatting LittleFS"));
+        LogSerial.println(F("Restarting Device"));
         delay(1000);
         ESP.restart();
     }
-    Serial.println(F("Mounted LittleFS"));
+    LogSerial.println(F("Mounted LittleFS"));
 };
 
 #endif

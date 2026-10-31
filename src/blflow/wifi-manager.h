@@ -5,7 +5,9 @@
 #include <ArduinoJson.h> 
 #include <WiFi.h>
 
+#include "diagnostics.h"
 #include "filesystem.h"
+#include "log-serial.h"
 #include "types.h"
 
 bool shouldSaveConfig = true;
@@ -14,9 +16,9 @@ int wifimode = 0;
 uint8_t bssid[6] = {0};
 
 void configModeCallback() {
-  Serial.println(F("Entered config mode"));
-  Serial.print(F("AP IP address: "));
-  Serial.println(WiFi.softAPIP());
+  LogSerial.println(F("Entered config mode"));
+  LogSerial.print(F("AP IP address: "));
+  LogSerial.println(WiFi.softAPIP());
 }
 const char* wl_status_to_string(wl_status_t status) {
   switch (status) {
@@ -39,7 +41,7 @@ int str2mac(const char* mac, uint8_t* values){
     }
 }
 bool connectToWifi(){
-    Serial.println(F("-------------------------------------"));
+    LogSerial.println(F("-------------------------------------"));
     WiFi.mode(WIFI_STA);   //ESP32 connects to an access point
     delay(10);
     WiFi.disconnect();
@@ -57,8 +59,8 @@ bool connectToWifi(){
         }
         else{
             if (printerConfig.debuging || printerConfig.debugingchange){
-                Serial.print(F("Parsing MAC Address Failed, reverting to "));
-                Serial.println(globalVariables.SSID);
+                LogSerial.print(F("Parsing MAC Address Failed, reverting to "));
+                LogSerial.println(globalVariables.SSID);
             } 
             WiFi.begin(globalVariables.SSID, globalVariables.APPW);
             wifimode = 1;
@@ -72,7 +74,7 @@ bool connectToWifi(){
             WiFi.begin(globalVariables.SSID, globalVariables.APPW);
             connectionAttempts = 1;
             wifimode = 1;
-            Serial.println(F("Attempting to connect without specific BSSI"));
+            LogSerial.println(F("Attempting to connect without specific BSSI"));
         }
         if(connectionAttempts > 10 && wifimode == 1){
             WiFi.disconnect();
@@ -81,25 +83,25 @@ bool connectToWifi(){
             wifimode = 2;
             if(strlen(printerConfig.BSSID) == 0) wifimode = 0;
             
-            Serial.println(F("Attempting to connect to open network (no password)"));
+            LogSerial.println(F("Attempting to connect to open network (no password)"));
         }
         if(connectionAttempts > 10 && wifimode == 2){
             WiFi.disconnect();
             WiFi.begin(globalVariables.SSID, globalVariables.APPW, 0, bssid);
             connectionAttempts = 1;
             wifimode = 0;
-            Serial.println(F("Attempting to connect to wifi using BSSI"));
+            LogSerial.println(F("Attempting to connect to wifi using BSSI"));
         }
 
-        Serial.print(F("Connecting to WIFI.. Status check #"));
-        Serial.print(connectionAttempts);
-        Serial.print(F(" / 10      SSID: "));
-        Serial.print(globalVariables.SSID);
+        LogSerial.print(F("Connecting to WIFI.. Status check #"));
+        LogSerial.print(connectionAttempts);
+        LogSerial.print(F(" / 10      SSID: "));
+        LogSerial.print(globalVariables.SSID);
         if(strlen(printerConfig.BSSID) > 0){
-            Serial.print(F("   BSSID: "));
-            Serial.print(printerConfig.BSSID);
+            LogSerial.print(F("   BSSID: "));
+            LogSerial.print(printerConfig.BSSID);
         }
-        Serial.println();
+        LogSerial.println();
 
         if(status != WiFi.status()){
             status = WiFi.status();
@@ -108,22 +110,22 @@ bool connectToWifi(){
                 case WL_CONNECTED:
                 case WL_IDLE_STATUS:
                 case WL_CONNECT_FAILED:
-                    Serial.print(F("Wifi Status: "));
-                    Serial.println(wl_status_to_string(status));
+                    LogSerial.print(F("Wifi Status: "));
+                    LogSerial.println(wl_status_to_string(status));
                     break;
                 case WL_NO_SSID_AVAIL:
-                    Serial.print(F("Wifi Status: "));
-                    Serial.println(wl_status_to_string(status));
-                    Serial.println(F("Bad WiFi credentials"));
+                    LogSerial.print(F("Wifi Status: "));
+                    LogSerial.println(wl_status_to_string(status));
+                    LogSerial.println(F("Bad WiFi credentials"));
                     return false;
                 case WL_DISCONNECTED:
-                    Serial.print(F("Wifi Status: "));
-                    Serial.println(wl_status_to_string(status));
-                    Serial.println(F("Disconnected. (Check low RSSI)"));
+                    LogSerial.print(F("Wifi Status: "));
+                    LogSerial.println(wl_status_to_string(status));
+                    LogSerial.println(F("Disconnected. (Check low RSSI)"));
                     return false;
                 default:
-                    Serial.print(F("Uncaught Status - Wifi Status: "));
-                    Serial.println(wl_status_to_string(status));
+                    LogSerial.print(F("Uncaught Status - Wifi Status: "));
+                    LogSerial.println(wl_status_to_string(status));
                     break;
             }
         }
@@ -132,30 +134,25 @@ bool connectToWifi(){
     }
 
 
-    #ifdef ARDUINO_ARCH_ESP32
-        WiFi.setTxPower(WIFI_POWER_19_5dBm); // https://github.com/G6EJD/ESP32-8266-Adjust-WiFi-RF-Power-Output/blob/main/README.md
-    #endif
-    
-    #ifdef ESP32
-        WiFi.setTxPower(WIFI_POWER_19_5dBm); // https://github.com/G6EJD/ESP32-8266-Adjust-WiFi-RF-Power-Output/blob/main/README.md
-    #endif
-    Serial.print(F("IP_ADDRESS:"));    // !!! Line required in this format for WifiSetup.html page to show IP Address correct.
-    Serial.print(WiFi.localIP());      // !!! Line required in this format for WifiSetup.html page to show IP Address correct.
-    Serial.println(F("\n         "));  // !!! Line required in this format for WifiSetup.html page to show IP Address correct.
+    // Transmit power defaults to the maximum: https://github.com/G6EJD/ESP32-8266-Adjust-WiFi-RF-Power-Output/blob/main/README.md
+    applyWifiRadioSettings();
+    LogSerial.print(F("IP_ADDRESS:"));    // !!! Line required in this format for WifiSetup.html page to show IP Address correct.
+    LogSerial.print(WiFi.localIP());      // !!! Line required in this format for WifiSetup.html page to show IP Address correct.
+    LogSerial.println(F("\n         "));  // !!! Line required in this format for WifiSetup.html page to show IP Address correct.
 
-    Serial.print(F("Connected To Wifi Access Point:  "));
-    Serial.println(globalVariables.SSID);
-    Serial.print(F("Specific BSSID:                  "));  //MAC address of connected AP
-    Serial.println(WiFi.BSSIDstr());
-    Serial.print(F("RSSI (Signal Strength):          "));
-    Serial.println(WiFi.RSSI());
-    Serial.print(F("BLLED Controller IP Address:     "));
-    Serial.println(WiFi.localIP());
-    Serial.println();
-    Serial.print(F("Use web browser to access 'http://"));  // Instruction for user to go to Config page
-    Serial.print(WiFi.localIP());                           // Instruction for user to go to Config page
-    Serial.println(F("/' to view the setup page"));         // Instruction for user to go to Config page
-    Serial.println();
+    LogSerial.print(F("Connected To Wifi Access Point:  "));
+    LogSerial.println(globalVariables.SSID);
+    LogSerial.print(F("Specific BSSID:                  "));  //MAC address of connected AP
+    LogSerial.println(WiFi.BSSIDstr());
+    LogSerial.print(F("RSSI (Signal Strength):          "));
+    LogSerial.println(WiFi.RSSI());
+    LogSerial.print(F("BLLED Controller IP Address:     "));
+    LogSerial.println(WiFi.localIP());
+    LogSerial.println();
+    LogSerial.print(F("Use web browser to access 'http://"));  // Instruction for user to go to Config page
+    LogSerial.print(WiFi.localIP());                           // Instruction for user to go to Config page
+    LogSerial.println(F("/' to view the setup page"));         // Instruction for user to go to Config page
+    LogSerial.println();
     return true;
 };
 
@@ -165,29 +162,29 @@ void scanNetwork()
     int bestRSSI = -200;
     String bestBSSID = "";
 
-    Serial.println(F("Wifi network scan start"));
+    LogSerial.println(F("Wifi network scan start"));
     int n = WiFi.scanNetworks();
-    Serial.println(F("Network scan complete"));
+    LogSerial.println(F("Network scan complete"));
 
     if (n == 0) {
-        Serial.println(F("No wifi networks found :("));
+        LogSerial.println(F("No wifi networks found :("));
     } else {
-        Serial.print(n); // Count
-        Serial.println(F(" Wifi networks found"));
-        Serial.println(F("-------------------------------------------------------------------------"));
+        LogSerial.print(n); // Count
+        LogSerial.println(F(" Wifi networks found"));
+        LogSerial.println(F("-------------------------------------------------------------------------"));
         for (int i = 0; i < n; ++i) {                // Print SSID and RSSI for each network found
-            Serial.print(i + 1);
-            Serial.print(F(": "));
-            Serial.print(WiFi.SSID(i));
-            Serial.print(F(" ("));
-            Serial.print(WiFi.RSSI(i));
-            Serial.print(F("dBm, "));
-            if (WiFi.RSSI(i) < -50) Serial.print(F(" ")); //Spacing... because I just can't look at the results when misaligned.
-            Serial.print(constrain(2 * (WiFi.RSSI(i) + 100), 0, 100));
-            Serial.print(F("%)      "));
-            Serial.print(F("BSSID: "));
-            Serial.print(WiFi.BSSIDstr(i));
-            Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " open" : " encrypted");
+            LogSerial.print(i + 1);
+            LogSerial.print(F(": "));
+            LogSerial.print(WiFi.SSID(i));
+            LogSerial.print(F(" ("));
+            LogSerial.print(WiFi.RSSI(i));
+            LogSerial.print(F("dBm, "));
+            if (WiFi.RSSI(i) < -50) LogSerial.print(F(" ")); //Spacing... because I just can't look at the results when misaligned.
+            LogSerial.print(constrain(2 * (WiFi.RSSI(i) + 100), 0, 100));
+            LogSerial.print(F("%)      "));
+            LogSerial.print(F("BSSID: "));
+            LogSerial.print(WiFi.BSSIDstr(i));
+            LogSerial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " open" : " encrypted");
 
             if(WiFi.SSID(i) == globalVariables.SSID && WiFi.RSSI(i) > bestRSSI)
             {
@@ -196,31 +193,31 @@ void scanNetwork()
             }
             delay(10);
         }
-        Serial.println();
+        LogSerial.println();
         if(strcmp(printerConfig.BSSID, bestBSSID.c_str()) == 0){
-                Serial.print(F("BSSID already set to: "));
-                Serial.print(printerConfig.BSSID);
+                LogSerial.print(F("BSSID already set to: "));
+                LogSerial.print(printerConfig.BSSID);
         }
         else{
             if(strlen(printerConfig.BSSID) == 0 || printerConfig.rescanWiFiNetwork){
                 strcpy(printerConfig.BSSID,bestBSSID.c_str());
-                Serial.print(F("Saving strongest AP for: "));
-                Serial.println(globalVariables.SSID);
-                Serial.print(F("Strongest BSSID (MAC Address): "));
-                Serial.print(printerConfig.BSSID);
+                LogSerial.print(F("Saving strongest AP for: "));
+                LogSerial.println(globalVariables.SSID);
+                LogSerial.print(F("Strongest BSSID (MAC Address): "));
+                LogSerial.print(printerConfig.BSSID);
             }
             else{
-                Serial.print(F("Ignoring strongest AP for: "));
-                Serial.println(globalVariables.SSID);
-                Serial.print(F("Using alrady saved BSSID (MAC Address): "));
-                Serial.print(printerConfig.BSSID);
+                LogSerial.print(F("Ignoring strongest AP for: "));
+                LogSerial.println(globalVariables.SSID);
+                LogSerial.print(F("Using alrady saved BSSID (MAC Address): "));
+                LogSerial.print(printerConfig.BSSID);
             }
-            Serial.print(F("     RSSI (Signal Strength): "));
-            Serial.print(bestRSSI);
-            Serial.println(F("dBm"));
+            LogSerial.print(F("     RSSI (Signal Strength): "));
+            LogSerial.print(bestRSSI);
+            LogSerial.println(F("dBm"));
         }
     }
-    Serial.println();
+    LogSerial.println();
 }
 
 

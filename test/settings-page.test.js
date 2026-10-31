@@ -24,17 +24,19 @@ function loadPage({ chartAvailable = true } = {}) {
   const elements = new Map([...html.matchAll(/<[^>]+\bid=['"]([^'"]+)['"][^>]*>/g)].map(match => {
     const tag = match[0];
     const element = {
+      tagName: /^<([\w-]+)/.exec(tag)[1].toLowerCase(),
       value: /\bvalue=['"]([^'"]*)['"]/.exec(tag)?.[1] || '',
       name: /\bname=['"]([^'"]*)['"]/.exec(tag)?.[1],
       type: /\btype=['"]([^'"]*)['"]/.exec(tag)?.[1],
       checked: /\bchecked\b/.test(tag), disabled: /\bdisabled\b/.test(tag), hidden: /\bhidden\b/.test(tag),
-      textContent: '', style: {}, listeners: {},
+      textContent: '', style: {}, listeners: {}, attributes: {},
       addEventListener(event, handler) { this.listeners[event] = handler; },
+      setAttribute(name, value) { this.attributes[name] = value; },
       reportValidity() { return true; },
     };
     return [match[1], element];
   }));
-  const requests = [], fetches = [], events = {}, charts = [], timers = new Map();
+  const requests = [], fetches = [], events = {}, charts = [], timers = new Map(), confirmations = [];
   let now = 0, timerId = 0;
   class XMLHttpRequest {
     constructor() { requests.push(this); }
@@ -48,7 +50,8 @@ function loadPage({ chartAvailable = true } = {}) {
   }
   class FormData {
     constructor() {
-      this.entries = [...elements.values()].filter(element => element.name && !element.disabled &&
+      this.entries = [...elements.values()].filter(element => ['input', 'select', 'textarea'].includes(element.tagName) &&
+        element.name && !element.disabled &&
         (element.type !== 'checkbox' || element.checked)).map(element => [element.name, element.type === 'checkbox' ? 'on' : element.value]);
     }
     [Symbol.iterator]() { return this.entries[Symbol.iterator](); }
@@ -56,6 +59,7 @@ function loadPage({ chartAvailable = true } = {}) {
   const context = vm.createContext({
     XMLHttpRequest, FormData, URLSearchParams,
     alert() { assert.fail('Unexpected blocking alert'); }, console: { error() {} }, setInterval() {},
+    confirm(message) { confirmations.push(message); return page.confirmResult; },
     setTimeout(callback, delay) { timers.set(++timerId, { callback, at: now + delay }); return timerId; },
     clearTimeout(id) { timers.delete(id); },
     fetch(url, options) {
@@ -72,9 +76,10 @@ function loadPage({ chartAvailable = true } = {}) {
       resize() {}
     } } : {}),
   });
+  let page;
   vm.runInContext(script, context);
-  const page = {
-    context, elements, requests, fetches, events, charts,
+  page = {
+    context, elements, requests, fetches, events, charts, confirmations, confirmResult: true,
     get: id => elements.get(id),
     advanceTime(milliseconds) {
       now += milliseconds;
@@ -87,7 +92,7 @@ function loadPage({ chartAvailable = true } = {}) {
     pending(url) { const request = fetches.find(request => request.url === url && !request.done); assert.ok(request, `No pending ${url}`); return request; },
     async respond(url, body, status = 200) {
       const request = this.pending(url); request.done = true;
-      request.resolve({ ok: status >= 200 && status < 300, json: async () => copy(body), text: async () => typeof body === 'string' ? body : JSON.stringify(body) });
+      request.resolve({ ok: status >= 200 && status < 300, status, json: async () => copy(body), text: async () => typeof body === 'string' ? body : JSON.stringify(body) });
       await settle();
     },
   };
@@ -716,4 +721,122 @@ test('the login section warns while unprotected and never shows the saved passwo
   page.requests[1].respond(200, 'Settings saved');
   page.requests[2].respond(200, JSON.stringify({ ...baseConfig, webUser: 'admin', webPasswordSet: true }));
   assert.equal(page.get('webPassword').value, '');
+});
+
+test('Debug & Diagnostics settings load, default to the radio defaults, and save explicit values', async () => {
+  let page = await readyPage();
+  assert.equal(page.get('wifiTxPower').value, '78');
+  for (const name of ['wifiSleep', 'printerConnection', 'ssdpEnabled']) assert.equal(page.get(name).checked, true);
+  assert.equal(page.get('diagnostics-fields').disabled, false);
+  page = await readyPage({ ...baseConfig, wifiTxPower: 34, wifiSleep: false, printerConnection: false, ssdpEnabled: true });
+  assert.equal(page.get('wifiTxPower').value, '34');
+  assert.equal(page.get('wifiSleep').checked, false);
+  assert.equal(page.get('printerConnection').checked, false);
+  page.get('ssdpEnabled').checked = false;
+  page.context.submitOptions({ preventDefault() {} });
+  assert.equal(page.get('diagnostics-fields').disabled, true, 'Locked while saving');
+  const body = new URLSearchParams(page.requests[1].body);
+  assert.equal(body.get('wifiTxPower'), '34');
+  assert.equal(body.get('wifiSleep'), 'off');
+  assert.equal(body.get('printerConnection'), 'off');
+  assert.equal(body.get('ssdpEnabled'), 'off');
+  assert.equal(body.has('sections'), false);
+});
+
+const diagnostics = {
+  firmware: 'Stable 1.5.1 (2026.10.31)', uptime: 2 * 86400 + 3725, resetReason: 'brownout', ssid: 'workshop',
+  bssid: '02:00:00:00:00:01', channel: 6, rssi: -61, ip: '192.0.2.10', wifiTxPower: 78, wifiSleep: true,
+  printerConnection: true, printerConnected: true, printerState: 0, printerReportsPerMinute: 58,
+  printerBytesPerMinute: 41984, lastPrinterReport: 1, homeAssistant: 'disconnected', homeAssistantState: 4,
+  ssdpEnabled: false, freeHeap: 150000, minFreeHeap: 90000, maxAllocHeap: 65524,
+};
+
+test('the runtime status loads when its section opens, and failures say so', async () => {
+  const page = await readyPage();
+  assert.equal(page.fetches.some(request => request.url === '/diag'), false, 'Not loaded while closed');
+  page.get('debugDiagDetails').open = true;
+  page.trigger('debugDiagDetails', 'toggle');
+  await page.respond('/diag', diagnostics);
+  const text = page.get('diagPanel').textContent;
+  for (const expected of [/workshop \(02:00:00:00:00:01\), channel 6/, /-61 dBm, 96%/, /transmit power 19\.5 dBm, modem sleep on/,
+    /Printer:\s+connected/, /58\/min, 41 kB\/min; last 1 s ago/, /rejected the username or password/, /SSDP:\s+off/,
+    /free 146 kB, lowest 88 kB/, /Largest block:\s+64 kB/, /2 d 01:02:05/, /Last reset:\s+brownout/]) {
+    assert.match(text, expected);
+  }
+  page.trigger('refreshDiag', 'click');
+  await page.respond('/diag', { ...diagnostics, printerConnection: false, lastPrinterReport: null }, 200);
+  assert.match(page.get('diagPanel').textContent, /Printer:\s+connection turned off/);
+  assert.match(page.get('diagPanel').textContent, /none since start/);
+  page.trigger('refreshDiag', 'click');
+  await page.respond('/diag', 'Unauthorized', 401);
+  assert.match(page.get('diagPanel').textContent, /Unable to load the runtime status \(HTTP 401\)/);
+});
+
+test('the status bar shows Wi-Fi strength, the printer link, and Home Assistant', async () => {
+  const page = await readyPage();
+  let polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', { temp: 20, speed: 0, speed2: 0, rssi: -61, printerConnection: true,
+    printerConnected: true, homeAssistant: 'connected', homeAssistantState: 0 });
+  await polling;
+  // -61 dBm lights four of the five indicators; -60 dBm or better lights all of them.
+  assert.equal(page.get('wifiLevel1').attributes.fill, '#7cb342');
+  assert.equal(page.get('wifiLevel4').attributes.stroke, '#7cb342');
+  assert.equal(page.get('wifiLevel5').attributes.stroke, '#ccc');
+  assert.match(page.get('wifiTitle').textContent, /96% \(-61 dBm\)/);
+  assert.equal(page.get('printerOnline').style.display, 'inline');
+  assert.equal(page.get('printerOffline').style.display, 'none');
+  assert.equal(page.get('printerTitle').textContent, 'Printer: connected');
+  assert.equal(page.get('haOnline').style.display, 'inline');
+  assert.equal(page.get('haHouse').attributes.opacity, '1');
+  polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', { temp: 20, speed: 0, speed2: 0, rssi: -55 });
+  await polling;
+  assert.equal(page.get('wifiLevel5').attributes.stroke, '#2e7d32');
+  polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', { temp: 20, speed: 0, speed2: 0, rssi: -80, printerConnection: false,
+    printerConnected: false, homeAssistant: 'disabled', homeAssistantState: -1 });
+  await polling;
+  assert.equal(page.get('wifiLevel1').attributes.fill, '#d32f2f');
+  assert.equal(page.get('wifiLevel2').attributes.stroke, '#ccc');
+  assert.equal(page.get('printerOffline').style.display, 'inline');
+  assert.equal(page.get('printerTitle').textContent, 'Printer: connection turned off');
+  assert.equal(page.get('haOffline').style.display, 'none');
+  assert.equal(page.get('haTitle').textContent, 'Home Assistant: off');
+  polling = page.context.fetchSensorData();
+  await page.respond('/sensorData', {}, 500);
+  await polling;
+  assert.equal(page.get('wifiTitle').textContent, 'Wi-Fi signal: unknown');
+  assert.equal(page.get('printerTitle').textContent, 'Printer: unknown');
+});
+
+test('editing a curve point leaves the settings unchanged, and Enter applies the point', async () => {
+  const page = await readyPage(separateConfig);
+  page.get('settings-form').listeners.input({ target: { closest: selector => selector === '.curve-editor' ? {} : null } });
+  assert.equal(page.get('settings-status').textContent, '');
+  page.charts[0].options.onClick({}, [{ datasetIndex: 0, index: 1 }]);
+  page.get('edit-speed').value = '45';
+  let prevented = false;
+  page.get('edit-speed').listeners.keydown({ key: 'Enter', preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(JSON.parse(new URLSearchParams(page.pending('/updateFanConfig').options.body).get('points')).points[1].speed, 45);
+  page.get('settings-form').listeners.input({ target: { closest: () => null } });
+  assert.match(page.get('settings-status').textContent, /unsaved/i);
+});
+
+test('restart asks first, then posts with the header that marks the controller\'s own pages', async () => {
+  const page = await readyPage();
+  page.confirmResult = false;
+  page.trigger('toolRestart', 'click');
+  assert.equal(page.confirmations.length, 1);
+  assert.equal(page.fetches.some(request => request.url === '/restart'), false);
+  page.confirmResult = true;
+  page.trigger('toolRestart', 'click');
+  const request = page.pending('/restart');
+  assert.equal(request.options.method, 'POST');
+  assert.equal(request.options.headers['X-BLSmartFlow'], '1');
+  await page.respond('/restart', 'The controller is restarting.');
+  assert.match(page.get('restart-status').textContent, /reloads when it is back/);
+  page.trigger('toolRestart', 'click');
+  await page.respond('/restart', 'Refused: make changes from the controller\'s own pages', 403);
+  assert.match(page.get('restart-status').textContent, /Unable to restart: Refused/);
 });

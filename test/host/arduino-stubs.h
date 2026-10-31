@@ -2,13 +2,16 @@
 // Minimal host substitutes for ESP32 I/O; production JSON and firmware code are used unchanged.
 #include <algorithm>
 #include <cctype>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 #define F(x) x
 #define PROGMEM
@@ -19,6 +22,8 @@ public:
     String() = default;
     String(const std::string& s) : std::string(s) {}
     String(int n) : std::string(std::to_string(n)) {}
+    String(unsigned int n) : std::string(std::to_string(n)) {}
+    String(unsigned long n) : std::string(std::to_string(n)) {}
     String(float n) : std::string(std::to_string(n)) {}
     String(double n, int = 2) : std::string(std::to_string(n)) {}
     String(long n, int) : std::string(std::to_string(n)) {}
@@ -47,7 +52,19 @@ struct SerialMock {
     size_t write(uint8_t) { return 1; }
     size_t write(const uint8_t*, size_t n) { return n; }
 } Serial;
-struct ESPMock { int restarts = 0; void restart() { ++restarts; } } ESP;
+struct ESPMock {
+    int restarts = 0;
+    void restart() { ++restarts; }
+    uint32_t getFreeHeap() { return 150000; }
+    uint32_t getMinFreeHeap() { return 90000; }
+    uint32_t getMaxAllocHeap() { return 65524; }
+} ESP;
+enum esp_reset_reason_t { ESP_RST_UNKNOWN, ESP_RST_POWERON, ESP_RST_EXT, ESP_RST_SW, ESP_RST_PANIC, ESP_RST_INT_WDT,
+    ESP_RST_TASK_WDT, ESP_RST_WDT, ESP_RST_DEEPSLEEP, ESP_RST_BROWNOUT, ESP_RST_SDIO };
+inline esp_reset_reason_t mockResetReason = ESP_RST_POWERON;
+inline esp_reset_reason_t esp_reset_reason() { return mockResetReason; }
+inline int64_t mockUptimeMicros = 0;
+inline int64_t esp_timer_get_time() { return mockUptimeMicros; }
 inline uint32_t mockMillis = 0;
 inline unsigned long millis() { return mockMillis; }
 inline void delay(int) {}
@@ -57,11 +74,23 @@ using byte = uint8_t;
 constexpr int WL_CONNECTED = 3, HEX = 16;
 inline long random(long maximum) { return maximum - 1; }
 struct IPAddressMock { String toString() const { return "192.0.2.10"; } };
+enum wifi_power_t : int8_t { WIFI_POWER_19_5dBm = 78, WIFI_POWER_2dBm = 8 };
+enum wifi_ps_type_t { WIFI_PS_NONE, WIFI_PS_MIN_MODEM, WIFI_PS_MAX_MODEM };
 struct WiFiMock {
     int connectionStatus = WL_CONNECTED;
+    int txPower = WIFI_POWER_19_5dBm, radioChanges = 0;
+    bool sleep = true;
     int status() { return connectionStatus; }
     String macAddress() { return "AA:BB:CC:0D:0E:0F"; }
     IPAddressMock localIP() { return {}; }
+    String SSID() { return "test-network"; }
+    String BSSIDstr() { return "02:00:00:00:00:01"; }
+    int32_t channel() { return 6; }
+    int8_t RSSI() { return -61; }
+    bool setTxPower(wifi_power_t power) { txPower = power; ++radioChanges; return true; }
+    wifi_power_t getTxPower() { return static_cast<wifi_power_t>(txPower); }
+    bool setSleep(bool enabled) { sleep = enabled; ++radioChanges; return true; }
+    wifi_ps_type_t getSleep() { return sleep ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE; }
 } WiFi;
 struct WiFiClient {
     uint32_t connectTimeout = 0;
@@ -73,10 +102,30 @@ struct WiFiClientSecure : WiFiClient {
     void setInsecure() { insecure = true; }
     void setHandshakeTimeout(unsigned long seconds) { handshakeTimeout = seconds; }
 };
+// Formats like Arduino's Print, so text logged through LogSerial can be checked.
 class Print {
 public:
     virtual ~Print() = default;
     virtual size_t write(uint8_t) = 0;
+    virtual size_t write(const uint8_t *data, size_t length) {
+        size_t written = 0;
+        while (length--) written += write(*data++);
+        return written;
+    }
+    size_t print(const char *text) { return write(reinterpret_cast<const uint8_t *>(text), strlen(text)); }
+    size_t print(const std::string &text) { return write(reinterpret_cast<const uint8_t *>(text.data()), text.size()); }
+    size_t print(char c) { return write(uint8_t(c)); }
+    template<class T, class = std::enable_if_t<std::is_arithmetic_v<T>>> size_t print(T value) { return print(std::to_string(value)); }
+    size_t println() { return print("\r\n"); }
+    template<class T> size_t println(const T &value) { return print(value) + println(); }
+    size_t printf(const char *format, ...) {
+        char text[256];
+        va_list arguments;
+        va_start(arguments, format);
+        const int length = vsnprintf(text, sizeof(text), format, arguments);
+        va_end(arguments);
+        return length < 0 ? 0 : print(std::string(text, std::min<size_t>(length, sizeof(text) - 1)));
+    }
 };
 class Stream : public Print {
 public:
@@ -185,8 +234,9 @@ struct WebServer {
     std::map<std::string,String> headers;
     std::pair<std::string,std::string> credentials;
     int authenticationRequests = 0;
+    std::map<std::string,String> responseHeaders;
     void send(int status,const char* = "",const String& body = "") { responses.push_back(status); lastBody=body; }
-    template<class... T> void sendHeader(T...) {}
+    template<class N, class V> void sendHeader(const N& name, const V& value, bool = false) { responseHeaders[String(name)] = String(value); }
     template<class... T> void send_P(int status, T...) { responses.push_back(status); }
     template<class... T> void on(T...) {}
     template<class... T> void collectHeaders(T...) {}
@@ -217,3 +267,20 @@ inline std::map<int,int> pwmValues;
 inline void pinMode(int,int) {}
 inline void analogWrite(int pin,int duty) { pwmValues[pin]=duty; }
 inline long map(long value,long a,long b,long c,long d) { return (value-a)*(d-c)/(b-a)+c; }
+
+// ESP32SSDP: counts starts and stops of the discovery responder.
+struct SSDPMock {
+    int begins = 0, ends = 0;
+    template<class... T> void setSchemaURL(T...) {}
+    template<class... T> void setHTTPPort(T...) {}
+    template<class... T> void setDeviceType(T...) {}
+    template<class... T> void setName(T...) {}
+    template<class... T> void setSerialNumber(T...) {}
+    template<class... T> void setURL(T...) {}
+    template<class... T> void setModelName(T...) {}
+    template<class... T> void setModelNumber(T...) {}
+    template<class... T> void setManufacturer(T...) {}
+    template<class... T> void setManufacturerURL(T...) {}
+    bool begin() { ++begins; return true; }
+    void end() { ++ends; }
+} SSDP;

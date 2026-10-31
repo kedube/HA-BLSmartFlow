@@ -2,6 +2,7 @@
 #define BLFLOW_MQTT_REPORT_H
 
 #include <ArduinoJson.h>
+#include "log-serial.h"
 #include "types.h"
 #include "post-print.h"
 
@@ -57,13 +58,13 @@ inline bool parsePrinterReport(const uint8_t *payload, size_t length) {
     for (const char *field : fields) filter["print"][field] = true;
     JsonDocument message;
     if (deserializeJson(message, payload, length, DeserializationOption::Filter(filter))) {
-        Serial.println(F("Deserialize error while parsing MQTT"));
+        LogSerial.println(F("Deserialize error while parsing MQTT"));
         return false;
     }
     if (printerConfig.mqttdebug) {
-        Serial.print(F("(Filtered) MQTT payload: "));
-        serializeJson(message, Serial);
-        Serial.println();
+        LogSerial.print(F("(Filtered) MQTT payload: "));
+        serializeJson(message, LogSerial);
+        LogSerial.println();
     }
 
     JsonObjectConst report = message["print"].as<JsonObjectConst>();

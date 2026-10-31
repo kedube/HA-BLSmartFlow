@@ -77,6 +77,13 @@ extern "C"
         char webUser[33] = "";
         char webPassword[65] = "";
 
+        // Debug & Diagnostics: Wi-Fi radio tuning and switches for ruling out a subsystem.
+        // All apply when saved.
+        int wifiTxPower = 78;           // Quarter-dBm steps; 78 is the radio's maximum, 19.5 dBm
+        bool wifiSleep = true;          // Modem sleep, the ESP32 default
+        bool printerConnection = true;  // MQTT connection to the printer
+        bool ssdpEnabled = true;        // Discovery by the xtouch project
+
     } PrinterConfig;
     PrinterConfig printerConfig;
 

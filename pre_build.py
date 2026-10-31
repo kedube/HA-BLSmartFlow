@@ -12,6 +12,10 @@ OUTPUT_HEADER_FILE = os.path.join(WWW_DIR, OUTPUT_HEADER_NAME)
 ASSET_HEADERS = {
     "fanpage.html": "fanpage.h",
     "updatepage.html": "updatePage.h",
+    "backupRestore.html": "backupRestore.h",
+    "webSerialPage.html": "webSerialPage.h",
+    "style.css": "style.h",
+    "particles.js": "particles.h",
     "favicon.ico": "favicon.h",
 }
 

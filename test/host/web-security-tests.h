@@ -4,6 +4,7 @@ int request(void (*handler)(), std::map<std::string,String> params = {}, bool ow
     webServer.headers.clear();
     if (ownPage) webServer.headers[ownPageHeader] = "1";
     webServer.responses.clear();
+    webServer.responseHeaders.clear();
     handler();
     assert(webServer.responses.size() == 1);
     return webServer.responses[0];
@@ -35,10 +36,14 @@ void setLogin() {
     assert(loginRequired());
 }
 
+// Every page and read-only endpoint, which any client on the network may load unless a login is set.
+const std::vector<void (*)()> pageHandlers = {handleSetup, handleGetOptions, handleGetFanConfig, handleSensorData,
+    handleUpdatePage, handleBackupPage, handleLogPage, handleStyle, handleScript, handleDiag, handleLog};
+
 void webSecurityTests() {
     check("without a login, pages are open but changes must come from the controller's own pages", [] {
         putConfig(legacyConfig); reboot();
-        for (auto handler : {handleSetup, handleGetOptions, handleGetFanConfig, handleSensorData, handleUpdatePage}) {
+        for (auto handler : pageHandlers) {
             assert(request(handler) == 200);
         }
         const auto disk = savedConfig();
@@ -56,7 +61,7 @@ void webSecurityTests() {
         for (const auto &login : std::vector<std::pair<std::string,std::string>>{
             {"",""}, {"admin","wrong"}, {"Admin","correct horse"}, {"admin",""}}) {
             webServer.credentials = login;
-            for (auto handler : {handleSetup, handleGetOptions, handleGetFanConfig, handleSensorData, handleUpdatePage}) {
+            for (auto handler : pageHandlers) {
                 const int challenges = webServer.authenticationRequests;
                 assert(request(handler) == 401 && webServer.authenticationRequests == challenges + 1);
             }
@@ -66,7 +71,7 @@ void webSecurityTests() {
             assert(savedConfig() == disk);
         }
         webServer.credentials = {"admin","correct horse"};
-        for (auto handler : {handleSetup, handleGetOptions, handleGetFanConfig, handleSensorData, handleUpdatePage}) {
+        for (auto handler : pageHandlers) {
             assert(request(handler) == 200);
         }
         assert(request(handleGetOptions) == 200);

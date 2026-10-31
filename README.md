@@ -16,6 +16,9 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 - Per-fan Post Print timers with a chosen duration and speed
 - Separate animated fan indicators
 - Home Assistant monitoring and control over MQTT, with automatic discovery
+- A single Settings page with collapsible sections and a status bar for Wi-Fi, the printer, and Home Assistant
+- Debug & Diagnostics with live runtime status, Wi-Fi radio tuning, and subsystem switches
+- Device Tools for firmware updates, settings backup and restore, a live controller log, and restarts
 
 ### Changelog
 
@@ -57,11 +60,30 @@ The compiler and `.firmware` output filenames use the same reserved version. The
 
 Each build also writes the OTA-ready image to `build/esp32dev/firmware-<version>.bin`, for example `firmware-1.3.8.bin`. Use this versioned file when uploading through the web UI. PlatformIO's internal `firmware.bin` remains available for its upload and merge steps.
 
+#### Settings Page
+
+<p>
+  <img src="images/blsmartflow-settings.png" width="380" alt="Settings page with the Fan Control section open below the status bar, showing Fan 1 following the chamber fan with Post Print on and Fan 2 at a static 35%">
+  <img src="images/blsmartflow-fan.png" width="380" alt="Fan Curves section of Settings showing the Fan 1 and Fan 2 temperature curves on one chart, the Edit curve switch, and live readings">
+</p>
+
+The controller's web page is a single Settings page, styled after the BLLED controller's pages on a blue background. The header shows an animated indicator for each fan with its current speed, and beneath it the printer fan being followed or the Post Print countdown. Below the header, a status bar shows three connections, refreshed every second:
+
+- **Printer**: a green link while the printer connection is up, otherwise a red broken link.
+- **Home Assistant**: a faded house while the connection is switched off, then a green link once connected or a red broken link while connecting or disconnected.
+- **Wi-Fi**: signal bars colored from red for a weak signal to green for a strong one, scaled from 0% at -85 dBm to 100% at -60 dBm.
+
+Hovering over an icon shows its details, such as `Wi-Fi signal: 72% (-67 dBm)`, `Printer: connection turned off`, or `Home Assistant: Not connected: the broker rejected the username or password.`
+
+The settings are grouped into collapsible sections: **Fan Control**, **Fan Curves**, **Printer**, **Home Assistant**, **Web Page Login**, **Debug & Diagnostics**, and **Device Tools**. Fan Control is open when the page loads, and opening a section closes the one that was open. Switches sit on the right of the settings they control. **Save Settings**, at the bottom, saves every section at once, and a confirmation appears in the middle of the page for four seconds. Fan curve points save on their own, described below.
+
+Earlier versions had separate **Settings** and **Fan Graph** tabs; the fan graph is now the **Fan Curves** section. The Firmware Update, Backup & Restore, and Controller Log pages share the Settings page's style and animated background.
+
 #### Independent Fan Control
 
 **Synchronize Fans: On** uses Fan 1's curve and static-speed override for both outputs. This is also the default after upgrading from 1.0.x. Fan 1 is GPIO 17; Fan 2 is GPIO 16. Both curves use the printer's nozzle temperature.
 
-Set synchronization to **Off** and save to configure the fans separately. Fan 2 initially copies Fan 1's current settings. The Fan Graph page shows both curves; the **Edit curve** switch selects **Fan 1** on the left and **Fan 2** on the right. Clicking a point also selects its fan and opens the editor; overlapping points prefer the currently selected fan. Valid point changes save automatically, with a confirmation that disappears after four seconds. Each fan's static-speed switch overrides its own curve with the entered percentage.
+Set synchronization to **Off** and save to configure the fans separately. Fan 2 initially copies Fan 1's current settings. The **Fan Curves** section of Settings shows both curves; the **Edit curve** switch selects **Fan 1** on the left and **Fan 2** on the right. Clicking a point also selects its fan and opens the editor; overlapping points prefer the currently selected fan. Pressing Enter in a point's temperature or speed field applies it, like **Change**. Valid point changes save automatically, with a confirmation that disappears after four seconds. Each fan's static-speed switch overrides its own curve with the entered percentage.
 
 Switching synchronization back On preserves Fan 2's curve and static settings, including across restarts. Switching Off again restores them. Configuration changes take effect after a successful Save; unsaved changes to the synchronization selector do not change the running fan mode.
 
@@ -98,7 +120,9 @@ During the timer, its speed takes priority over the normal mode, and **Post Prin
 
 #### Home Assistant
 
-The controller can connect to your Home Assistant MQTT broker, such as the Mosquitto add-on with the MQTT integration. This is a second connection; the printer connection is unchanged. Under **Home Assistant** in Settings, switch on **Connect to MQTT Broker**, enter the broker host and port (usually 1883), add a username and password if the broker needs them, and save. The device appears as **BL Smart Flow+** under *Settings → Devices & services → MQTT* within a few seconds, and the status line in Settings shows whether it is connected. The connection is retried every 5 seconds at first, slowing to once a minute while the broker is unreachable.
+The controller can connect to your Home Assistant MQTT broker, such as the Mosquitto add-on with the MQTT integration. This is a second connection; the printer connection is unchanged. Under **Home Assistant** in Settings, switch on **Connect to MQTT Broker**, enter the broker host and port (usually 1883), add a username and password if the broker needs them, and save. The device appears as **BL Smart Flow+** under *Settings → Devices & services → MQTT* within a few seconds. The line below the switch and the Home Assistant icon in the status bar show whether it is connected or why it is not, such as a rejected username or password or a broker that can't be reached. The connection is retried every 5 seconds at first, slowing to once a minute while the broker is unreachable. The **Controller Log**, under **Device Tools**, records each connection attempt and every command applied or ignored, in lines starting with `[HA]`.
+
+<img src="images/blsmartflow-home-assistant.png" width="380" alt="Home Assistant section of Settings, connected to the broker at homeassistant.local port 1883 with a saved password">
 
 The saved password is never sent back to the web page. Leave the field blank to keep it, or clear the username to remove both. To prevent the saved password from being sent to a different broker, you must re-enter it when you change the broker host. Like the Wi-Fi password and printer access code, it is stored on the device in plain text.
 
@@ -117,7 +141,7 @@ The connection is plain, unencrypted MQTT, so the broker password crosses your n
 | Fan 1/2 Post Print | Switch | Same as **Post Print** |
 | Fan 1/2 Post Print duration, speed | Number | 1–86400 s and 0–100 % |
 
-Changes from Home Assistant follow the same rules as **Save** on the Settings page: each is checked, written to flash, then applied, and invalid values are ignored. Repeating the current value does not write to flash. While the fans are synchronized, Fan 1's entities control both outputs and Fan 2's controls are unavailable, keeping their settings for later; the Fan 2 speed sensor still reports the output. Curves are edited only on the Fan Graph page. An open Settings page reloads when Home Assistant changes a setting. If it has unsaved edits, it keeps them and warns that saving will replace the newer settings.
+Changes from Home Assistant follow the same rules as **Save** on the Settings page: each is checked, written to flash, then applied, and invalid values are ignored. Repeating the current value does not write to flash. While the fans are synchronized, Fan 1's entities control both outputs and Fan 2's controls are unavailable, keeping their settings for later; the Fan 2 speed sensor still reports the output. Curves are edited only in the **Fan Curves** section of Settings. An open Settings page reloads when Home Assistant changes a setting. If it has unsaved edits, it keeps them and warns that saving will replace the newer settings.
 
 Topics use `blsmartflow/<mac>`, where `<mac>` is the controller's lowercase MAC address without colons:
 
@@ -136,13 +160,41 @@ Under **Web Page Login** in Settings, enter a username and password and save; yo
 
 Requests that change something, whether settings, curves, or firmware, must carry an `X-BLSmartFlow` header, which the controller's own pages send. Another website can't add a custom header without the browser first asking the controller, which never agrees. So another site can't change the controller through your browser, even if your browser has saved the login. Such requests receive 403.
 
-To update the firmware, choose **Update firmware** at the bottom of Settings, which opens `/update`, and upload `build/esp32dev/firmware-<version>.bin`. The login and header are checked before anything is written. The controller restarts only after a complete, valid update; otherwise it keeps running the current firmware. From a script, send both:
+To update the firmware, open **Device Tools** in Settings and choose **Firmware Update**, which opens `/update`, and upload `build/esp32dev/firmware-<version>.bin`. The login and header are checked before anything is written. The controller restarts only after a complete, valid update; otherwise it keeps running the current firmware. From a script, send both:
 
 ```sh
 curl -u <user>:<password> -H 'X-BLSmartFlow: 1' -F firmware=@build/esp32dev/firmware-1.4.13.bin http://<controller-ip>/update
 ```
 
 `/getOptions` and `/submitOptions` use `webUser` and `webPassword`; `/getOptions` returns `webPasswordSet` instead of the password.
+
+#### Debug & Diagnostics
+
+The **Debug & Diagnostics** section of Settings holds the **Debugging**, **Debug OnChange Events**, and **MQTT Logging** switches, which add detail to the Controller Log. It also holds these settings, which apply when you save:
+
+- **Wi-Fi Transmit Power**, from 2 to 19.5 dBm. It defaults to 19.5 dBm, the maximum and the earlier fixed setting. A lower power can help a controller close to its access point.
+- **Wi-Fi Modem Sleep**, on by default as on any ESP32. Turning it off can make the connection steadier and the pages quicker, using a little more power.
+- **Printer Connection** and **SSDP Discovery** under **Subsystem Isolation**, both on by default, for ruling a subsystem out. Without the printer connection, the fans get no nozzle temperatures, printer fan speeds, or print endings. SSDP lets the xtouch screen find the controller.
+
+<img src="images/blsmartflow-diagnostics.png" width="380" alt="Debug & Diagnostics section of Settings with the debugging switches, Wi-Fi radio settings, subsystem switches, and Runtime Status">
+
+**Runtime Status**, at the bottom of the section, refreshes every 5 seconds while the section is open. It shows the Wi-Fi network, signal, transmit power, and IP address; the printer connection, with the reports and bytes received in the last full minute and the age of the last report; Home Assistant; SSDP; free memory, the lowest since starting, and the largest free block; uptime; and why the controller last started (`power on`, `restart`, `crash`, `watchdog`, `brownout`, `reset pin`, or `deep sleep`). A brownout or watchdog reset points to the power supply or a hung task rather than the settings.
+
+`/getOptions` and `/submitOptions` use `wifiTxPower` (the radio's quarter-dBm steps: `78`, `68`, `60`, `52`, `44`, `34`, `20`, or `8`), `wifiSleep`, `printerConnection`, and `ssdpEnabled`. `/diag` returns the Runtime Status as JSON. `/sensorData` adds `rssi`, `printerConnection`, and `printerConnected` for the status bar.
+
+#### Device Tools
+
+The **Device Tools** section of Settings opens:
+
+- **Firmware Update**, at `/update`, described above.
+- **Backup & Restore**, at `/backuprestore`. **Download Settings** saves the controller's settings file. It contains the Wi-Fi password, printer access code, and the Home Assistant and login passwords in plain text, so downloading it requires a Web Page Login. **Restore Settings** uploads a settings file. The controller replaces its settings only with a complete file that reads as BL Smart Flow+ settings, then restarts. If the restored Wi-Fi settings don't work, run the Wi-Fi setup over USB.
+- **Controller Log**, at `/webserial`, which shows the USB serial log live in the browser, with pause, clear, and download. The controller keeps the last 8 KB; a page that falls behind marks the gap, and a restart is marked too. The page reads `/log?from=<position>`, which returns the text logged after that position, with `X-Log-Start` and `X-Log-Next` headers.
+- **Wi-Fi Setup over USB**, the existing setup page, for changing networks or clearing a forgotten login.
+- **Restart Controller**, which asks first, then restarts the controller and reloads Settings once it is back.
+
+Downloads, restores, and restarts follow the login and `X-BLSmartFlow` header rules above.
+
+<img src="images/blsmartflow-controller-log.png" width="640" alt="Controller Log page showing the live serial log, including the printer MQTT connection and Home Assistant lines, with Pause, Clear, Download, and Follow new lines controls">
 
 #### Tests
 
@@ -160,7 +212,7 @@ The native tests use the production firmware handlers and ArduinoJson with simul
 
 In embedded applications, HTML content is efficiently stored in PROGMEM memory. To achieve this, .h files are generated from compressed HTML files for webpages (i.e., `src/www/setuppage.html`) that are run on the device.
 
-- `pre_build.py` runs automatically through `platformio.ini`, compressing web assets into `src/www/www.h` and regenerating the individual `fanpage.h`, `updatePage.h`, and `favicon.h` headers used by the web server.
+- `pre_build.py` runs automatically through `platformio.ini`, compressing web assets into `src/www/www.h` and regenerating the individual `fanpage.h`, `updatePage.h`, `backupRestore.h`, `webSerialPage.h`, `style.h`, `particles.h`, and `favicon.h` headers used by the web server. The pages share `style.css` and the `particles.js` background, served at `/style.css` and `/particles.js`.
 - Rebuild after editing HTML or the favicon so the generated headers and firmware contain the updated assets.
 
 The favicon overlays the fan blades on the shell, preserving transparency. To regenerate its 16, 32, 48, and 64 pixel sizes with ImageMagick, run:

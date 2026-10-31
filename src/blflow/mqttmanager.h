@@ -9,6 +9,8 @@
 
 #include "AutoGrowBufferStream.h"
 #include "connect-timeout.h"
+#include "diagnostics.h"
+#include "log-serial.h"
 #include "types.h"
 #include "mqtt-report.h"
 #include "fans.h"
@@ -33,65 +35,65 @@ void ParseMQTTState(int code){
     switch (code)
     {
     case -4: // MQTT_CONNECTION_TIMEOUT
-        Serial.println(F("MQTT TIMEOUT"));
+        LogSerial.println(F("MQTT TIMEOUT"));
         printerVariables.errorcode = "no mqtt";
         break;
     case -3: // MQTT_CONNECTION_LOST
-        Serial.println(F("MQTT CONNECTION_LOST"));
+        LogSerial.println(F("MQTT CONNECTION_LOST"));
         printerVariables.errorcode = "no mqtt";
         break;
     case -2: // MQTT_CONNECT_FAILED
-        Serial.println(F("MQTT CONNECT_FAILED"));
+        LogSerial.println(F("MQTT CONNECT_FAILED"));
         printerVariables.errorcode = "no mqtt";
         break;
     case -1: // MQTT_DISCONNECTED
-        Serial.println(F("MQTT DISCONNECTED"));
+        LogSerial.println(F("MQTT DISCONNECTED"));
         printerVariables.errorcode = "no mqtt";
         break;
     case 0:  // MQTT_CONNECTED
-        Serial.println(F("MQTT CONNECTED"));
+        LogSerial.println(F("MQTT CONNECTED"));
         if (printerVariables.errorcode == "no mqtt"){
             //if this routine set the error code, clear it
             printerVariables.errorcode = "";
         }
         break;
     case 1:  // MQTT_CONNECT_BAD_PROTOCOL
-        Serial.println(F("MQTT BAD PROTOCOL"));
+        LogSerial.println(F("MQTT BAD PROTOCOL"));
         printerVariables.errorcode = "no mqtt";
         break;
     case 2:  // MQTT_CONNECT_BAD_CLIENT_ID
-        Serial.println(F("MQTT BAD CLIENT ID"));
+        LogSerial.println(F("MQTT BAD CLIENT ID"));
         printerVariables.errorcode = "no mqtt";
         break;
     case 3:  // MQTT_CONNECT_UNAVAILABLE
-        Serial.println(F("MQTT UNAVAILABLE"));
+        LogSerial.println(F("MQTT UNAVAILABLE"));
         printerVariables.errorcode = "no mqtt";
         break;
     case 4:  // MQTT_CONNECT_BAD_CREDENTIALS
-        Serial.println(F("MQTT BAD CREDENTIALS"));
+        LogSerial.println(F("MQTT BAD CREDENTIALS"));
         printerVariables.errorcode = "no mqtt";
         break;
     case 5: // MQTT UNAUTHORIZED
-        Serial.println(F("MQTT UNAUTHORIZED"));
+        LogSerial.println(F("MQTT UNAUTHORIZED"));
         printerVariables.errorcode = "no mqtt";
         break;
     }
 }
 
 void connectMqtt(){
-    if(WiFi.status() != WL_CONNECTED){
-        //Abort MQTT connection attempt when no Wifi
+    if(WiFi.status() != WL_CONNECTED || !printerConfig.printerConnection){
+        //Abort MQTT connection attempt when no Wifi, or while turned off in Debug & Diagnostics
         return;
     }
     if (!mqttClient.connected() && (millis() - mqttattempt) >= mqttRetryMs){
-        Serial.println(F("Connecting to mqtt..."));
+        LogSerial.println(F("Connecting to mqtt..."));
         const bool connected = mqttClient.connect(clientId.c_str(),"bblp",printerConfig.accessCode);
         // Measure the retry delay from the end of the attempt, which can block for seconds.
         mqttattempt = millis();
         if (connected){
             mqttRetryMs = 0;
-            Serial.print(F("MQTT connected, subscribing to MQTT Topic:  "));
-            Serial.println(report_topic);
+            LogSerial.print(F("MQTT connected, subscribing to MQTT Topic:  "));
+            LogSerial.println(report_topic);
             mqttClient.subscribe(report_topic.c_str());
             printerVariables.online = true;
             printerVariables.disconnectMQTTms = 0;
@@ -99,15 +101,15 @@ void connectMqtt(){
                 //if this routine set the error code, clear it
                 printerVariables.errorcode = "";
             }
-            //Serial.println(F("Updating LEDs from MQTT connect"));
+            //LogSerial.println(F("Updating LEDs from MQTT connect"));
         }else{
             mqttRetryMs = std::min(std::max(mqttRetryMs * 2, mqttRetryMinimumMs), mqttRetryMaximumMs);
-            Serial.println(F("Failed to connect with error code: "));
-            Serial.print(mqttClient.state());
-            Serial.print(F("  "));
+            LogSerial.println(F("Failed to connect with error code: "));
+            LogSerial.print(mqttClient.state());
+            LogSerial.print(F("  "));
             ParseMQTTState(mqttClient.state());
             // if(mqttClient.state() == 5){
-            //     Serial.println(F("Restarting Device"));
+            //     LogSerial.println(F("Restarting Device"));
             //     delay(1000);
             //     ESP.restart();                
             // }
@@ -117,20 +119,21 @@ void connectMqtt(){
 
 void ParseCallback(char *topic, byte *payload, unsigned int length){
     if (parsePrinterReport(payload, length) && printerConfig.debuging) {
-        Serial.println(F("Change from MQTT"));
+        LogSerial.println(F("Change from MQTT"));
     }
 }
 
 
 void mqttCallback(char *topic, byte *payload, unsigned int length){
+    printerTraffic.add(stream.current_length(), millis());
     ParseCallback(topic, (byte *)stream.get_buffer(), stream.current_length());
     stream.flush();
 }
 
 void setupMqtt(){
     clientId += String(random(0xffff), HEX);
-    Serial.print(F("Setting up MQTT with Bambu Lab Printer IP address: "));
-    Serial.println(printerConfig.printerIP);
+    LogSerial.print(F("Setting up MQTT with Bambu Lab Printer IP address: "));
+    LogSerial.println(printerConfig.printerIP);
 
     device_topic = String("device/") + printerConfig.serialNumber;
     report_topic = device_topic + String("/report");
@@ -144,7 +147,7 @@ void setupMqtt(){
     mqttClient.setStream(stream);
     mqttClient.setCallback(mqttCallback);
     mqttClient.setSocketTimeout(20);
-    Serial.println(F("Finished setting up MQTT"));
+    LogSerial.println(F("Finished setting up MQTT"));
     connectMqtt();
 }
 
@@ -155,6 +158,16 @@ void mqttloop(){
         //Abort MQTT connection attempt when no Wifi
         return;
     }
+    if (!printerConfig.printerConnection){
+        // Turned off under Debug & Diagnostics, to rule the printer connection out.
+        if (mqttClient.connected()) {
+            mqttClient.disconnect();
+            LogSerial.println(F("Printer connection turned off"));
+        }
+        printerCommunicationLost();
+        fanloop();
+        return;
+    }
     if (!mqttClient.connected()){
         printerCommunicationLost();
         fanloop(); // Restore normal outputs before the blocking MQTT reconnect.
@@ -162,7 +175,7 @@ void mqttloop(){
         if(printerVariables.disconnectMQTTms == 0) {
             printerVariables.disconnectMQTTms = millis();
             //Record last time MQTT dropped connection
-            Serial.println(F("MQTT dropped during mqttloop"));
+            LogSerial.println(F("MQTT dropped during mqttloop"));
             ParseMQTTState(mqttClient.state());
         }
         connectMqtt();

@@ -5,6 +5,7 @@
 #include <ArduinoJson.h> 
 
 #include "filesystem.h"
+#include "log-serial.h"
 #include "types.h"
 
 void setupSerial(){
@@ -29,10 +30,10 @@ void serialLoop(){
         deserializeJson(doc, input);
         if (doc["ssid"].is<const char *>() && doc["pass"].is<const char *>()) {
             // The setup page shows this log, so echo identifiers but not secrets.
-            Serial.print(F("SSID "));
-            Serial.println(doc["ssid"].as<String>());
-            Serial.println(doc["printerip"].as<String>());
-            Serial.println(doc["printerserial"].as<String>());
+            LogSerial.print(F("SSID "));
+            LogSerial.println(doc["ssid"].as<String>());
+            LogSerial.println(doc["printerip"].as<String>());
+            LogSerial.println(doc["printerserial"].as<String>());
 
             PrinterConfig candidate = printerConfig;
             char ssid[sizeof(globalVariables.SSID)];
@@ -41,7 +42,7 @@ void serialLoop(){
                 !readSerialField(doc["printerip"], candidate.printerIP) ||
                 !readSerialField(doc["printercode"], candidate.accessCode) ||
                 !readSerialField(doc["printerserial"], candidate.serialNumber)) {
-                Serial.println(F("A setting is too long; nothing was saved."));
+                LogSerial.println(F("A setting is too long; nothing was saved."));
                 return;
             }
             // Setup over USB needs the device in hand, so it also clears a forgotten web login.
@@ -51,7 +52,7 @@ void serialLoop(){
             printerConfig = std::move(candidate);
 
             saveFileSystem();
-            Serial.println(F("Restarting Device"));
+            LogSerial.println(F("Restarting Device"));
             delay(1000);
             ESP.restart();
        }
