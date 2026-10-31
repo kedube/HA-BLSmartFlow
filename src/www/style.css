@@ -242,6 +242,26 @@ small, .field-help { display: block; color: #666; font-size: .85em; margin: 2px 
 
 progress { width: 100%; height: 15px; margin-bottom: 10px; }
 
+/* Lists to choose from, such as the Wi-Fi networks and printers on the setup page. */
+.choice-list { border: 1px solid #ccc; border-radius: 3px; margin: -2px 0 10px; max-height: 240px; overflow-y: auto; }
+.choice-list button.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 0;
+  border-bottom: 1px solid #eee;
+  background-color: #fff;
+  color: #333;
+  text-align: left;
+}
+.choice-list button.choice:last-child { border-bottom: 0; }
+.choice-list button.choice:hover { background-color: #eef4fc; }
+.choice-name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.choice-detail { flex-shrink: 0; color: #666; font-size: .9em; }
+.choice-empty { margin: 0; padding: 8px 10px; color: #666; }
+
 .firmware-version { color: white; text-align: center; font-size: .8rem; margin: 10px 0; }
 .firmware-version a { color: inherit; }
 

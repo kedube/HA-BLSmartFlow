@@ -11,6 +11,7 @@ OUTPUT_HEADER_NAME = "www.h"
 OUTPUT_HEADER_FILE = os.path.join(WWW_DIR, OUTPUT_HEADER_NAME)
 ASSET_HEADERS = {
     "fanpage.html": "fanpage.h",
+    "networkSetup.html": "networkSetup.h",
     "updatepage.html": "updatePage.h",
     "backupRestore.html": "backupRestore.h",
     "webSerialPage.html": "webSerialPage.h",

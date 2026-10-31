@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BL Smart Flow+ — Wi-Fi &amp; Printer Setup</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <canvas id="particleCanvas"></canvas>
+  <div id="container">
+    <div id="header">
+      <h1>Wi-Fi &amp; Printer Setup</h1>
+    </div>
+    <div class="form-container">
+      <form id="setupForm">
+        <p id="apIntro" class="field-help" hidden></p>
+        <p id="setup-status" class="status-pill" role="status">Loading...</p>
+        <fieldset id="setupFields" class="plain-fieldset" disabled>
+          <div class="detailSplitter">Wi-Fi</div>
+          <button type="button" id="scanNetworks">Find Networks</button>
+          <div id="networkList" class="choice-list" hidden></div>
+          <label for="ssid">Network Name</label>
+          <input type="text" id="ssid" name="ssid" maxlength="32" autocomplete="off" required>
+          <label for="wifiPassword">Password</label>
+          <input type="password" id="wifiPassword" name="password" maxlength="63" autocomplete="new-password">
+
+          <div class="detailSplitter">Printer</div>
+          <button type="button" id="findPrinters">Find Printers</button>
+          <p id="discoveryNote" class="field-help" hidden>Finding printers works once the controller is on your network. Enter the printer now, or later from Device Tools in Settings.</p>
+          <div id="printerList" class="choice-list" hidden></div>
+          <label for="printerip">Printer IP</label>
+          <input type="text" id="printerip" name="ip" maxlength="15" autocomplete="off">
+          <label for="printerserial">Serial Number</label>
+          <input type="text" id="printerserial" name="serial" maxlength="15" autocomplete="off">
+          <label for="printercode">Access Code</label>
+          <input type="text" id="printercode" name="code" maxlength="8" autocomplete="off">
+          <small>The access code is in the printer's network settings, on its screen.</small>
+
+          <button type="submit" id="saveSetup">Save and Restart</button>
+        </fieldset>
+        <p id="afterSave" class="field-help" hidden></p>
+        <a class="button secondary" id="restoreLink" href="/backuprestore" hidden>Restore a Backup Instead</a>
+        <a class="button secondary" id="backLink" href="/">Back to Settings</a>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    // The controller accepts changes only from its own pages, which send this header.
+    const ownPageHeader = 'X-BLSmartFlow';
+    const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+    let saved = null;
+    let saving = false;
+    let scanning = false;
+    // Networks the last scan found without a password.
+    let openNetworks = new Set();
+    let printerPolls = 0;
+    let printerTimer = null;
+
+    // As in the Settings status bar: -85 dBm or weaker is 0%, -60 dBm or stronger is 100%.
+    function signalPercent(rssi) {
+      return Math.max(0, Math.min(100, Math.round((rssi + 85) * 100 / 25)));
+    }
+
+    function choice(name, detail, onChoose) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'choice';
+      const nameText = document.createElement('span');
+      nameText.className = 'choice-name';
+      nameText.textContent = name;
+      const detailText = document.createElement('span');
+      detailText.className = 'choice-detail';
+      detailText.textContent = detail;
+      button.append(nameText, detailText);
+      button.addEventListener('click', onChoose);
+      return button;
+    }
+
+    function showMessage(list, text) {
+      const message = document.createElement('p');
+      message.className = 'choice-empty';
+      message.textContent = text;
+      list.replaceChildren(message);
+      list.hidden = false;
+    }
+
+    function isNewOpenNetwork(ssid) {
+      return ssid !== saved.ssid && openNetworks.has(ssid);
+    }
+
+    function renderPasswordHint() {
+      const ssid = $('ssid').value;
+      $('wifiPassword').placeholder = ssid === saved.ssid && saved.passwordSet ? 'Saved; leave blank to keep'
+        : isNewOpenNetwork(ssid) ? 'Open network; no password' : '';
+    }
+
+    async function loadSetup() {
+      try {
+        const response = await fetch('/getWifiSetup');
+        if (!response.ok) throw new Error();
+        saved = await response.json();
+        if (!saved || typeof saved.ssid !== 'string') throw new Error();
+      } catch (error) {
+        saved = null;
+        $('setup-status').textContent = 'Unable to load the setup. Reload this page to retry.';
+        return;
+      }
+      $('ssid').value = saved.ssid;
+      $('wifiPassword').value = '';
+      $('printerip').value = saved.ip || '';
+      $('printerserial').value = saved.id || '';
+      $('printercode').value = saved.code || '';
+      renderPasswordHint();
+      // On the setup network the controller is not on your network yet, so it cannot find printers.
+      $('apIntro').hidden = !saved.accessPoint;
+      $('apIntro').textContent = saved.ssid
+        ? 'The controller could not join ' + saved.ssid + ', so it opened this setup network. While nothing is connected here, it tries ' + saved.ssid + ' again every minute.'
+        : 'This controller is not on a Wi-Fi network yet. Choose your network and enter its password.';
+      $('findPrinters').hidden = saved.accessPoint;
+      $('discoveryNote').hidden = !saved.accessPoint;
+      $('restoreLink').hidden = !saved.accessPoint;
+      $('backLink').hidden = saved.accessPoint;
+      $('setupFields').disabled = false;
+      $('setup-status').textContent = '';
+      if (saved.accessPoint) scanNetworks();
+    }
+
+    // The controller scans in the background, so ask until the list is ready.
+    async function scanNetworks() {
+      if (scanning) return;
+      scanning = true;
+      $('scanNetworks').disabled = true;
+      $('scanNetworks').textContent = 'Scanning...';
+      showMessage($('networkList'), 'Looking for networks...');
+      try {
+        let response = await fetch('/wifiScan?start=1');
+        for (let tries = 0; response.status === 202 && tries < 20; ++tries) {
+          await wait(1000);
+          response = await fetch('/wifiScan');
+        }
+        if (response.status === 202) throw new Error('The scan did not finish; try again.');
+        if (!response.ok) throw new Error(await response.text() || 'The scan failed; try again.');
+        const networks = (await response.json()).networks;
+        openNetworks = new Set(networks.filter(network => !network.secure).map(network => network.ssid));
+        if (networks.length === 0) showMessage($('networkList'), 'No networks found. Enter the name below.');
+        else $('networkList').replaceChildren(...networks.map(network => choice(network.ssid,
+          signalPercent(network.rssi) + '%' + (network.secure ? '' : ', open'), () => chooseNetwork(network))));
+        renderPasswordHint();
+      } catch (error) {
+        // fetch rejects with a TypeError when the controller cannot be reached.
+        showMessage($('networkList'), error instanceof TypeError ? 'Unable to reach the controller; try again.' : error.message);
+      } finally {
+        scanning = false;
+        $('scanNetworks').disabled = false;
+        $('scanNetworks').textContent = 'Find Networks';
+      }
+    }
+
+    function chooseNetwork(network) {
+      $('ssid').value = network.ssid;
+      $('wifiPassword').value = '';
+      renderPasswordHint();
+      if (network.secure) $('wifiPassword').focus();
+    }
+
+    // Printers announce themselves every few seconds, so keep asking for 20 seconds.
+    function findPrinters() {
+      printerPolls = 10;
+      showMessage($('printerList'), 'Looking for printers on your network...');
+      if (printerTimer === null) pollPrinters();
+    }
+
+    async function pollPrinters() {
+      printerTimer = null;
+      let printers;
+      try {
+        const response = await fetch('/printers');
+        if (!response.ok) throw new Error();
+        printers = (await response.json()).printers;
+      } catch (error) {
+        showMessage($('printerList'), 'Unable to look for printers. Enter the printer below.');
+        return;
+      }
+      const searching = --printerPolls > 0;
+      if (printers.length > 0) {
+        $('printerList').replaceChildren(...printers.map(printer => choice(printer.name || printer.model || printer.serial,
+          printer.ip, () => choosePrinter(printer))));
+      } else if (!searching) {
+        showMessage($('printerList'), 'No printers answered. Check that the printer is on and on the same network, or enter it below.');
+      }
+      if (searching) printerTimer = setTimeout(pollPrinters, 2000);
+    }
+
+    function choosePrinter(printer) {
+      $('printerip').value = printer.ip;
+      $('printerserial').value = printer.serial;
+      $('printercode').focus();
+    }
+
+    // When the controller stays on the same network, return to Settings once it answers again.
+    function returnWhenBack(attempts) {
+      setTimeout(async () => {
+        try {
+          if ((await fetch('/sensorData')).ok) {
+            location.href = '/';
+            return;
+          }
+        } catch (error) {}
+        if (attempts > 1) returnWhenBack(attempts - 1);
+      }, 2000);
+    }
+
+    async function saveSetup(event) {
+      event.preventDefault();
+      if (!saved || saving) return;
+      const ssid = $('ssid').value;
+      const password = $('wifiPassword').value;
+      const changedNetwork = ssid !== saved.ssid;
+      const open = changedNetwork && !password && isNewOpenNetwork(ssid);
+      if (changedNetwork && !password && !open) {
+        $('setup-status').textContent = 'Enter the password for ' + ssid + '.';
+        return;
+      }
+      if (!saved.accessPoint && !confirm('Save and restart the controller' + (changedNetwork ? ' to join ' + ssid : '') + '?')) return;
+      const body = new URLSearchParams({ ssid, password, ip: $('printerip').value,
+                                         serial: $('printerserial').value, code: $('printercode').value });
+      if (open) body.set('open', 'on');
+      saving = true;
+      $('setupFields').disabled = true;
+      $('setup-status').textContent = 'Saving...';
+      try {
+        const response = await fetch('/submitWifiSetup', {
+          method: 'POST',
+          headers: { [ownPageHeader]: '1', 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
+        if (!response.ok) throw new Error(await response.text() || 'HTTP ' + response.status);
+      } catch (error) {
+        saving = false;
+        $('setupFields').disabled = false;
+        $('setup-status').textContent = 'Not saved: ' + error.message;
+        return;
+      }
+      $('setup-status').textContent = 'Saved. The controller is restarting to join ' + ssid + '.';
+      $('afterSave').hidden = false;
+      $('afterSave').textContent = (saved.accessPoint ? 'Reconnect this device to ' + ssid + ', then open ' : 'Once it has joined, open ')
+        + saved.address + ', or find the controller in your router\'s list of devices. If it cannot join, its setup network appears again.';
+      if (!saved.accessPoint && !changedNetwork) returnWhenBack(30);
+    }
+
+    $('ssid').addEventListener('input', renderPasswordHint);
+    $('scanNetworks').addEventListener('click', scanNetworks);
+    $('findPrinters').addEventListener('click', findPrinters);
+    $('setupForm').addEventListener('submit', saveSetup);
+    loadSetup();
+  </script>
+  <script src="/particles.js"></script>
+</body>
+</html>

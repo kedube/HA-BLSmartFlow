@@ -26,7 +26,7 @@
           <input type="file" id="settingsFile" accept=".json,application/json">
           <button type="submit" id="restoreButton" disabled>Restore Settings</button>
         </form>
-        <small class="warning">Restoring replaces every setting, including Wi-Fi, and restarts the controller. If the file's Wi-Fi settings don't work here, run the Wi-Fi setup over USB to recover.</small>
+        <small class="warning">Restoring replaces every setting, including Wi-Fi, and restarts the controller. If the file's Wi-Fi settings don't work here, the controller opens its BLSmartFlow setup network so you can correct them.</small>
         <p id="restore-status" class="status-pill" role="status"></p>
 
         <a class="button secondary" href="/">Back to Settings</a>
@@ -71,7 +71,7 @@
           }
         } catch (error) {}
         if (attempts > 1) returnWhenBack(attempts - 1);
-        else $('restore-status').textContent = 'The controller has not come back. If its Wi-Fi changed, find its new address, or run the Wi-Fi setup over USB.';
+        else $('restore-status').textContent = 'The controller has not come back. If its Wi-Fi changed, find its new address. If it could not join the network, connect to its BLSmartFlow setup network.';
       }, 2000);
     }
 

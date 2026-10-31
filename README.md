@@ -18,7 +18,8 @@ The BLSmartflow is an ESP32 based device that connects to your Bambulab X1,X1C,P
 - Home Assistant monitoring and control over MQTT, with automatic discovery
 - A single Settings page with collapsible sections and a status bar for Wi-Fi, the printer, and Home Assistant
 - Debug & Diagnostics with live runtime status, Wi-Fi radio tuning, and subsystem switches
-- Device Tools for firmware updates, settings backup and restore, a live controller log, and restarts
+- Wi-Fi and printer setup from a phone or browser, with network scanning and printer discovery, so no USB cable is needed
+- Device Tools for Wi-Fi and printer setup, firmware updates, settings backup and restore, a live controller log, and restarts
 
 ### Changelog
 
@@ -45,7 +46,13 @@ To contribute to the Smartflow project, you'll need the following tools:
 8. After uploading the firmware, your BLSmartflow device should be ready to use.
 
 ### Setup Instructions
-Once you have uploaded the firmware to your device, please visit the [dutchdevelop.com/blsmartflow](https://www.dutchdevelop.com/blsmartflow) website for detailed setup instructions.
+Once the firmware is on the controller, set it up from a phone or computer:
+
+1. Join the Wi-Fi network **BLSmartFlow-XXXX** that the controller opens, where XXXX is the end of its MAC address. It has no password. Most phones then offer the setup page as the network's sign-in page; otherwise open `http://192.168.4.1/`.
+2. Choose **Find Networks**, choose your network, and enter its password. Enter the printer's IP address, serial number, and access code too, or leave them for later.
+3. Choose **Save and Restart**. The controller joins your network. Reconnect your phone or computer to that network and open `http://blflow.local/`, or find the controller in your router's list of devices.
+
+The same page, under **Device Tools → Wi-Fi & Printer Setup** in Settings, changes the network or printer later and can find the printers on your network; see [Wi-Fi & Printer Setup](#wi-fi--printer-setup). The [USB setup](https://dutchdevelop.com/smartflow-configuration-setup/) still works as well, and also clears a forgotten Web Page Login.
 
 
 ### Development Notes
@@ -75,7 +82,7 @@ The controller's web page is a single Settings page, styled after the BLLED cont
 
 Hovering over an icon shows its details, such as `Wi-Fi signal: 72% (-67 dBm)`, `Printer: connection turned off`, or `Home Assistant: Not connected: the broker rejected the username or password.`
 
-The settings are grouped into collapsible sections: **Fan Control**, **Fan Curves**, **Printer**, **Home Assistant**, **Web Page Login**, **Debug & Diagnostics**, and **Device Tools**. Fan Control is open when the page loads, and opening a section closes the one that was open. Switches sit on the right of the settings they control. **Save Settings**, at the bottom, saves every section at once, and a confirmation appears in the middle of the page for four seconds. Fan curve points save on their own, described below.
+The settings are grouped into collapsible sections: **Fan Control**, **Fan Curves**, **Home Assistant**, **Web Page Login**, **Debug & Diagnostics**, and **Device Tools**. Fan Control is open when the page loads, and opening a section closes the one that was open. Switches sit on the right of the settings they control. **Save Settings**, at the bottom, saves every section at once, and a confirmation appears in the middle of the page for four seconds. Fan curve points save on their own, described below.
 
 Earlier versions had separate **Settings** and **Fan Graph** tabs; the fan graph is now the **Fan Curves** section. The Firmware Update, Backup & Restore, and Controller Log pages share the Settings page's style and animated background.
 
@@ -184,14 +191,29 @@ The **Debug & Diagnostics** section of Settings holds the **Debugging**, **Debug
 
 `/getOptions` and `/submitOptions` use `wifiTxPower` (the radio's quarter-dBm steps: `78`, `68`, `60`, `52`, `44`, `34`, `20`, or `8`), `wifiSleep`, `printerConnection`, and `ssdpEnabled`. `/diag` returns the Runtime Status as JSON. `/sensorData` adds `rssi`, `printerConnection`, and `printerConnected` for the status bar.
 
+#### Wi-Fi & Printer Setup
+
+**Wi-Fi & Printer Setup**, under **Device Tools** in Settings, opens `/wifi`, which sets the Wi-Fi network and the printer:
+
+- **Find Networks** scans in the background, so the fans and pages keep running, and lists nearby networks, strongest first, with their signal. Choosing one fills in its name. Leave the password blank to keep the saved one; another network needs its password, unless the scan found it open.
+- **Find Printers** lists the Bambu Lab printers on your network by the name set on each printer, as they announce themselves over SSDP on UDP port 2021. Choosing one fills in its IP address and serial number. The access code is in the printer's network settings, on its screen. The controller listens for two minutes after the page last asked, without pausing the fans.
+- **Save and Restart** saves both and restarts the controller, which joins the network and connects to the printer only when it starts.
+
+<img src="images/blsmartflow-wifi-setup.png" width="380" alt="Wi-Fi & Printer Setup page with found networks and their signal strength, the saved network workshop with its password kept, and two found printers, Garage P1S and Office A1, above the printer IP, serial number, and access code fields">
+
+When no network is saved, or the controller can't join the saved one when it starts, it opens the open network **BLSmartFlow-XXXX** instead, and every address on that network leads to this page. While no device is connected to it, the controller tries the saved network again every minute and restarts normally once it joins. It doesn't try while a device is connected, because joining can move the radio to another channel and drop that device. A Web Page Login still applies on the setup network. Meanwhile the fans keep running on their settings, without the printer's readings, and the status LED blinks once while no network is saved, or twice while the saved one can't be joined.
+
+`/getWifiSetup` returns `ssid`, `passwordSet` instead of the password, the printer's `ip` with `code` and `id` masked as in `/getOptions`, `accessPoint` while the setup network is open, and the controller's `.local` `address`. `/wifiScan?start=1` starts a scan, and `/wifiScan` answers 202 until the results are ready. `/printers` returns the printers found. `/submitWifiSetup` takes `ssid`, `password`, `open`, `ip`, `serial`, and `code`, and needs the `X-BLSmartFlow` header like other changes.
+
 #### Device Tools
 
 The **Device Tools** section of Settings opens:
 
+- **Wi-Fi & Printer Setup**, at `/wifi`, described above.
 - **Firmware Update**, at `/update`, described above.
-- **Backup & Restore**, at `/backuprestore`. **Download Settings** saves the controller's settings file. It contains the Wi-Fi password, printer access code, and the Home Assistant and login passwords in plain text, so downloading it requires a Web Page Login. **Restore Settings** uploads a settings file. The controller replaces its settings only with a complete file that reads as BL Smart Flow+ settings, then restarts. If the restored Wi-Fi settings don't work, run the Wi-Fi setup over USB.
+- **Backup & Restore**, at `/backuprestore`. **Download Settings** saves the controller's settings file. It contains the Wi-Fi password, printer access code, and the Home Assistant and login passwords in plain text, so downloading it requires a Web Page Login. **Restore Settings** uploads a settings file. The controller replaces its settings only with a complete file that reads as BL Smart Flow+ settings, then restarts. If the restored Wi-Fi settings don't work, the controller opens its setup network.
 - **Controller Log**, at `/webserial`, which shows the USB serial log live in the browser, with pause, clear, and download. The controller keeps the last 8 KB; a page that falls behind marks the gap, and a restart is marked too. The page reads `/log?from=<position>`, which returns the text logged after that position, with `X-Log-Start` and `X-Log-Next` headers.
-- **Wi-Fi Setup over USB**, the existing setup page, for changing networks or clearing a forgotten login.
+- **Wi-Fi Setup over USB**, the original setup page, which also clears a forgotten login.
 - **Restart Controller**, which asks first, then restarts the controller and reloads Settings once it is back.
 
 Downloads, restores, and restarts follow the login and `X-BLSmartFlow` header rules above.

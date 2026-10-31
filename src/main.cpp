@@ -10,6 +10,7 @@
 #include "./blflow/indicator.h"
 #include "./blflow/home-assistant.h"
 #include "./blflow/log-serial.h"
+#include "./blflow/setup-access-point.h"
 
 int wifi_reconnect_count = 0;
 
@@ -34,9 +35,12 @@ void setup(){
 
     setupSerial();
 
-    if (strlen(globalVariables.SSID) == 0 || strlen(globalVariables.APPW) == 0) {
+    // An open network has no password, so only the network name is required.
+    if (!wifiConfigured()) {
         printerVariables.errorcode = "no config";
-        LogSerial.println(F("SSID or password is missing. Please configure both by going to: https://dutchdevelop.com/smartflow-configuration-setup/"));
+        LogSerial.println(F("No Wi-Fi network is set up yet"));
+        startSetupAccessPoint();
+        setupWebserver();
         return;
     }
     else if (printerVariables.errorcode == "no config"){
@@ -48,6 +52,8 @@ void setup(){
     scanNetwork(); //Sets the MAC address for following connection attempt
     if(!connectToWifi()){
         printerVariables.errorcode = "no wifi";
+        startSetupAccessPoint();
+        setupWebserver();
         return;
     }
     else if (printerVariables.errorcode == "no wifi"){
@@ -75,7 +81,15 @@ void loop(){
     indicatorloop();
     serialLoop();
 
-    if (globalVariables.started){
+    if (setupApActive) {
+        webserverloop();
+        if (setupAccessPointLoop()) {
+            LogSerial.println(F("[Setup] Joined the saved Wi-Fi network; restarting to start normally"));
+            delay(500);
+            ESP.restart();
+        }
+    }
+    else if (globalVariables.started){
         mqttloop();
         webserverloop();
         homeAssistantLoop();

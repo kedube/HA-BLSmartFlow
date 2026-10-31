@@ -24,6 +24,13 @@ void reset() {
     WiFi = WiFiMock{};
     SSDP = SSDPMock{};
     MDNS = MDNSMock{};
+    setupDns = DNSServer{};
+    setupApActive = setupRetrying = false;
+    setupRetryStarted = 0;
+    discoveryUdp = WiFiUDP{};
+    discoveredPrinterCount = 0;
+    discoveryListening = false;
+    discoveryRequested = lastPrinterSearch = 0;
     mockResetReason = ESP_RST_POWERON;
     mockUptimeMicros = 0;
     LogSerial = LogSerialClass{};
@@ -112,12 +119,14 @@ template<class T> void check(const char *name, T test) {
 #include "home-assistant-tests.h"
 #include "web-security-tests.h"
 #include "diagnostics-tests.h"
+#include "wifi-setup-tests.h"
 
 int main() {
     postPrintTests();
     homeAssistantTests();
     webSecurityTests();
     diagnosticsTests();
+    wifiSetupTests();
     check("legacy settings leave following disabled", [] {
         putConfig(legacyConfig); reboot();
         assert(!printerConfig.followPrinterFan && !printerConfig.followPrinterFan2);

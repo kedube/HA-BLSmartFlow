@@ -8,6 +8,8 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 #include <Update.h>
+#include <algorithm>
+#include <vector>
 #include "controller-name.h"
 #include "diagnostics.h"
 #include "filesystem.h"
@@ -15,12 +17,15 @@
 #include "home-assistant.h"
 #include "log-serial.h"
 #include "mqttmanager.h"
+#include "printer-discovery.h"
+#include "setup-access-point.h"
 #include "ssdp.h"
 
 
 WebServer webServer(80);
 
 #include "../www/fanpage.h"
+#include "../www/networkSetup.h"
 #include "../www/updatePage.h"
 #include "../www/backupRestore.h"
 #include "../www/webSerialPage.h"
@@ -60,7 +65,23 @@ void sendCompressed(const char *type, const uint8_t *data, unsigned int length) 
     webServer.send_P(200, type, (const char*)data, (int)length);
 }
 
-void handleSetup() { sendCompressed("text/html", fanpage_html_gz, fanpage_html_gz_len); }
+// While the setup network is open, every address leads to the setup page, which is what makes
+// phones offer it as the network's sign-in page.
+void redirectToSetup() {
+    webServer.sendHeader(F("Location"), String("http://") + setupApAddress.toString() + "/wifi");
+    webServer.send(302, "text/plain", "");
+}
+
+void handleNotFound() {
+    if (setupApActive) redirectToSetup();
+    else webServer.send(404, "text/plain", "Not found");
+}
+
+void handleSetup() {
+    if (setupApActive) redirectToSetup();
+    else sendCompressed("text/html", fanpage_html_gz, fanpage_html_gz_len);
+}
+void handleWifiPage() { sendCompressed("text/html", networkSetup_html_gz, networkSetup_html_gz_len); }
 void handleUpdatePage() { sendCompressed("text/html", updatepage_html_gz, updatepage_html_gz_len); }
 void handleBackupPage() { sendCompressed("text/html", backupRestore_html_gz, backupRestore_html_gz_len); }
 void handleLogPage() { sendCompressed("text/html", webSerialPage_html_gz, webSerialPage_html_gz_len); }
@@ -251,6 +272,10 @@ bool readFanModeArguments(const char *staticName, const char *followName, const 
     return true;
 }
 
+void upperCaseSerialNumber(PrinterConfig &config) {
+    for (char *c = config.serialNumber; *c; ++c) *c = toupper(static_cast<unsigned char>(*c));
+}
+
 template <size_t N>
 bool readStringArgument(const char *name, char (&value)[N]) {
     if (!webServer.hasArg(name)) return true;
@@ -341,9 +366,7 @@ void submitOptions() {
         webServer.send(400, "text/plain", "Printer field is too long");
         return;
     }
-    for (size_t i = 0; i < strlen(candidate.serialNumber); ++i) {
-        candidate.serialNumber[i] = toupper(static_cast<unsigned char>(candidate.serialNumber[i]));
-    }
+    upperCaseSerialNumber(candidate);
     // Legacy forms omit unchecked Fan 1 checkboxes.
     candidate.staticFan = false;
     if (!readBoolArgument("fansSynchronized", candidate.fansSynchronized) ||
@@ -412,6 +435,131 @@ void submitOptions() {
     }
     // mqttloop opens or closes the printer connection on its next pass.
     webServer.send(200, "text/plain", "Settings saved");
+}
+
+// Like the other passwords, the Wi-Fi password is never sent to the page.
+void handleGetWifiSetup() {
+    if (!allowRequest()) return;
+    JsonDocument doc;
+    doc["ssid"] = globalVariables.SSID;
+    doc["passwordSet"] = globalVariables.APPW[0] != '\0';
+    doc["ip"] = printerConfig.printerIP;
+    doc["code"] = obfuscate(printerConfig.accessCode);
+    doc["id"] = obfuscate(printerConfig.serialNumber);
+    doc["accessPoint"] = setupApActive;
+    doc["address"] = String("http://") + controllerHostname() + ".local/";
+    String response;
+    serializeJson(doc, response);
+    webServer.send(200, "application/json", response);
+}
+
+// Scans in the background, so the fans and pages keep running; the page asks again until the
+// list is ready. start begins a new scan, because an earlier scan's results may be out of date.
+void handleWifiScan() {
+    if (!allowRequest()) return;
+    if (webServer.hasArg("start")) {
+        WiFi.scanDelete();
+        if (WiFi.scanNetworks(true) == WIFI_SCAN_FAILED) {
+            webServer.send(503, "text/plain", "Unable to scan for networks; try again");
+            return;
+        }
+        webServer.send(202, "application/json", "{\"scanning\":true}");
+        return;
+    }
+    const int found = WiFi.scanComplete();
+    if (found == WIFI_SCAN_RUNNING) {
+        webServer.send(202, "application/json", "{\"scanning\":true}");
+        return;
+    }
+    if (found < 0) {
+        webServer.send(503, "text/plain", "The network scan failed; try again");
+        return;
+    }
+    // Strongest first, each name once. Hidden networks have no name to choose.
+    std::vector<int> order;
+    for (int i = 0; i < found; ++i) order.push_back(i);
+    std::stable_sort(order.begin(), order.end(), [](int a, int b) { return WiFi.RSSI(a) > WiFi.RSSI(b); });
+    JsonDocument doc;
+    JsonArray networks = doc["networks"].to<JsonArray>();
+    std::vector<String> names;
+    for (const int i : order) {
+        const String ssid = WiFi.SSID(i);
+        if (ssid.length() == 0 || std::find(names.begin(), names.end(), ssid) != names.end()) continue;
+        names.push_back(ssid);
+        JsonObject network = networks.add<JsonObject>();
+        network["ssid"] = ssid;
+        network["rssi"] = WiFi.RSSI(i);
+        network["secure"] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    }
+    WiFi.scanDelete();
+    String response;
+    serializeJson(doc, response);
+    webServer.send(200, "application/json", response);
+}
+
+void handlePrinters() {
+    if (!allowRequest()) return;
+    requestPrinterDiscovery();
+    JsonDocument doc;
+    doc["listening"] = discoveryListening;
+    JsonArray printers = doc["printers"].to<JsonArray>();
+    for (size_t i = 0; i < discoveredPrinterCount; ++i) {
+        JsonObject printer = printers.add<JsonObject>();
+        printer["ip"] = discoveredPrinters[i].ip;
+        printer["serial"] = discoveredPrinters[i].serial;
+        printer["name"] = discoveredPrinters[i].name;
+        printer["model"] = discoveredPrinters[i].model;
+    }
+    String response;
+    serializeJson(doc, response);
+    webServer.send(200, "application/json", response);
+}
+
+// Saves the network and printer, then restarts to join them; the printer connection is also
+// set up only at start. A blank password keeps the saved one for the same network. Another
+// network needs its password, unless the page found it open.
+void handleSubmitWifiSetup() {
+    if (!allowRequest(true)) return;
+    const String ssid = webServer.arg("ssid");
+    const String password = webServer.arg("password");
+    const bool sameNetwork = ssid == globalVariables.SSID;
+    if (ssid.length() == 0 || ssid.length() >= sizeof(globalVariables.SSID)) {
+        webServer.send(400, "text/plain", "Enter a Wi-Fi network name of 32 characters or fewer");
+        return;
+    }
+    if (password.length() > 0 && (password.length() < 8 || password.length() >= sizeof(globalVariables.APPW))) {
+        webServer.send(400, "text/plain", "Wi-Fi passwords have 8 to 63 characters");
+        return;
+    }
+    if (password.length() == 0 && !sameNetwork && webServer.arg("open") != "on") {
+        webServer.send(400, "text/plain", "Enter the password for this Wi-Fi network");
+        return;
+    }
+    PrinterConfig candidate = printerConfig;
+    if (!readStringArgument("ip", candidate.printerIP) ||
+        !readStringArgument("code", candidate.accessCode) ||
+        !readStringArgument("serial", candidate.serialNumber)) {
+        webServer.send(400, "text/plain", "Printer field is too long");
+        return;
+    }
+    upperCaseSerialNumber(candidate);
+    // A saved access point belongs to the old network.
+    if (!sameNetwork) candidate.BSSID[0] = '\0';
+    GlobalVariables previous = globalVariables;
+    strcpy(globalVariables.SSID, ssid.c_str());
+    if (password.length() > 0 || !sameNetwork) strcpy(globalVariables.APPW, password.c_str());
+    if (!saveFileSystem(candidate)) {
+        strcpy(globalVariables.SSID, previous.SSID);
+        strcpy(globalVariables.APPW, previous.APPW);
+        webServer.send(500, "text/plain", "Failed to save settings to flash");
+        return;
+    }
+    LogSerial.print(F("[Setup] Saved; restarting to join "));
+    LogSerial.println(globalVariables.SSID);
+    webServer.sendHeader("Connection", "close");
+    webServer.send(200, "text/plain", "Saved. The controller is restarting.");
+    delay(1000);
+    ESP.restart();
 }
 
 void handleGetFanConfig() {
@@ -629,7 +777,7 @@ void handleRestart() {
 }
 
 void setupWebserver(){
-    startMdns();
+    if (!setupApActive) startMdns();
     LogSerial.println(F("Setting up webserver"));
 
     // The server keeps only the request headers it is told to; it always keeps Authorization.
@@ -661,6 +809,12 @@ void setupWebserver(){
     webServer.on("/configfile.json", HTTP_GET, handleDownloadConfig);
     webServer.on("/configrestore", HTTP_POST, handleConfigRestore, handleConfigRestoreUpload);
     webServer.on("/restart", HTTP_POST, handleRestart);
+    webServer.on("/wifi", HTTP_GET, handleWifiPage);
+    webServer.on("/getWifiSetup", HTTP_GET, handleGetWifiSetup);
+    webServer.on("/wifiScan", HTTP_GET, handleWifiScan);
+    webServer.on("/printers", HTTP_GET, handlePrinters);
+    webServer.on("/submitWifiSetup", HTTP_POST, handleSubmitWifiSetup);
+    webServer.onNotFound(handleNotFound);
 
     webServer.begin();
 
@@ -670,6 +824,7 @@ void setupWebserver(){
 
 void webserverloop(){
     webServer.handleClient();
+    printerDiscoveryLoop();
     delay(10);
 }
 

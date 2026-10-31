@@ -73,25 +73,97 @@ inline void delay(int) {}
 using byte = uint8_t;
 constexpr int WL_CONNECTED = 3, HEX = 16;
 inline long random(long maximum) { return maximum - 1; }
-struct IPAddressMock { String toString() const { return "192.0.2.10"; } };
+struct IPAddress {
+    uint8_t octets[4] = {192, 0, 2, 10};
+    IPAddress() = default;
+    IPAddress(uint8_t a, uint8_t b, uint8_t c, uint8_t d) : octets{a, b, c, d} {}
+    String toString() const {
+        return std::to_string(octets[0]) + "." + std::to_string(octets[1]) + "." +
+            std::to_string(octets[2]) + "." + std::to_string(octets[3]);
+    }
+};
+using IPAddressMock = IPAddress;
 enum wifi_power_t : int8_t { WIFI_POWER_19_5dBm = 78, WIFI_POWER_2dBm = 8 };
 enum wifi_ps_type_t { WIFI_PS_NONE, WIFI_PS_MIN_MODEM, WIFI_PS_MAX_MODEM };
+enum wifi_mode_t { WIFI_OFF, WIFI_STA, WIFI_AP, WIFI_AP_STA };
+enum wifi_auth_mode_t { WIFI_AUTH_OPEN, WIFI_AUTH_WEP, WIFI_AUTH_WPA_PSK, WIFI_AUTH_WPA2_PSK };
+constexpr int16_t WIFI_SCAN_RUNNING = -1, WIFI_SCAN_FAILED = -2;
+struct ScannedNetwork { std::string ssid; int8_t rssi; wifi_auth_mode_t auth; };
 struct WiFiMock {
     int connectionStatus = WL_CONNECTED;
     int txPower = WIFI_POWER_19_5dBm, radioChanges = 0;
     bool sleep = true;
+    // Setup network and station attempts.
+    wifi_mode_t wifiMode = WIFI_STA;
+    std::string apName, joinedSsid, joinedPassword;
+    IPAddress apAddress;
+    int stations = 0, joins = 0, disconnects = 0;
+    bool autoReconnect = true;
+    // Scans: results stay until deleted; scanState is the count, or running/failed.
+    std::vector<ScannedNetwork> networks;
+    int16_t scanState = WIFI_SCAN_FAILED, startResult = WIFI_SCAN_RUNNING;
+    int scansStarted = 0, scansDeleted = 0;
     int status() { return connectionStatus; }
     String macAddress() { return "AA:BB:CC:0D:0E:0F"; }
     IPAddressMock localIP() { return {}; }
     String SSID() { return "test-network"; }
+    String SSID(int i) { return networks.at(i).ssid; }
     String BSSIDstr() { return "02:00:00:00:00:01"; }
     int32_t channel() { return 6; }
     int8_t RSSI() { return -61; }
+    int8_t RSSI(int i) { return networks.at(i).rssi; }
+    wifi_auth_mode_t encryptionType(int i) { return networks.at(i).auth; }
+    int16_t scanNetworks(bool) { ++scansStarted; return scanState = startResult; }
+    int16_t scanComplete() { return scanState; }
+    void scanDelete() { ++scansDeleted; scanState = WIFI_SCAN_FAILED; }
+    bool mode(wifi_mode_t m) { wifiMode = m; return true; }
+    bool softAP(const char *name) { apName = name; return true; }
+    bool softAPConfig(IPAddress local, IPAddress, IPAddress) { apAddress = local; return true; }
+    uint8_t softAPgetStationNum() { return stations; }
+    bool setAutoReconnect(bool enabled) { autoReconnect = enabled; return true; }
+    bool disconnect() { ++disconnects; return true; }
+    int begin(const char *ssid, const char *password) { ++joins; joinedSsid = ssid; joinedPassword = password; return 0; }
     bool setTxPower(wifi_power_t power) { txPower = power; ++radioChanges; return true; }
     wifi_power_t getTxPower() { return static_cast<wifi_power_t>(txPower); }
     bool setSleep(bool enabled) { sleep = enabled; ++radioChanges; return true; }
     wifi_ps_type_t getSleep() { return sleep ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE; }
 } WiFi;
+struct DNSServer {
+    bool started = false;
+    std::string domain;
+    IPAddress address;
+    int requests = 0;
+    bool start(uint16_t, const String &name, const IPAddress &ip) { started = true; domain = name; address = ip; return true; }
+    void processNextRequest() { ++requests; }
+    void stop() { started = false; }
+};
+struct UdpPacket { std::string payload; IPAddress sender; };
+struct WiFiUDP {
+    bool listenResult = true, listening = false;
+    IPAddress group;
+    uint16_t port = 0;
+    std::vector<UdpPacket> incoming;
+    UdpPacket current;
+    std::vector<std::string> sent;
+    std::string outgoing;
+    uint8_t beginMulticast(IPAddress ip, uint16_t p) { group = ip; port = p; return listening = listenResult; }
+    void stop() { listening = false; }
+    int parsePacket() {
+        if (incoming.empty()) return 0;
+        current = incoming.front();
+        incoming.erase(incoming.begin());
+        return current.payload.size();
+    }
+    int read(char *buffer, size_t length) {
+        const size_t copied = std::min(length, current.payload.size());
+        memcpy(buffer, current.payload.data(), copied);
+        return copied;
+    }
+    IPAddress remoteIP() { return current.sender; }
+    int beginPacket(IPAddress, uint16_t) { outgoing.clear(); return 1; }
+    size_t write(const uint8_t *data, size_t length) { outgoing.append((const char *)data, length); return length; }
+    int endPacket() { sent.push_back(outgoing); return 1; }
+};
 struct WiFiClient {
     uint32_t connectTimeout = 0;
     void setConnectionTimeout(uint32_t milliseconds) { connectTimeout = milliseconds; }
@@ -239,6 +311,7 @@ struct WebServer {
     template<class N, class V> void sendHeader(const N& name, const V& value, bool = false) { responseHeaders[String(name)] = String(value); }
     template<class... T> void send_P(int status, T...) { responses.push_back(status); }
     template<class... T> void on(T...) {}
+    template<class F> void onNotFound(F) {}
     template<class... T> void collectHeaders(T...) {}
     bool hasHeader(const char* name) { return headers.count(name) && !headers[name].empty(); }
     bool authenticate(const char* user,const char* password) { return credentials.first == user && credentials.second == password; }

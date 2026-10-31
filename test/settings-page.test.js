@@ -114,9 +114,8 @@ test('settings load without waiting for external images or the chart library', (
   assert.equal(page.requests[0].url, '/getOptions');
   assert.equal(page.get('saveOptions').disabled, true);
   page.requests[0].respond(200, JSON.stringify(baseConfig));
-  assert.equal(page.get('printerip').value, baseConfig.ip);
-  assert.equal(page.get('printercode').value, baseConfig.code);
-  assert.equal(page.get('printerserial').value, baseConfig.id);
+  // The printer is set on the Wi-Fi & Printer Setup page.
+  assert.equal(page.elements.has('printerip'), false);
   assert.equal(page.get('debuging').checked, true);
   assert.equal(page.get('saveOptions').disabled, false);
   assert.equal(page.get('settings-status').textContent, '');

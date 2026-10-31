@@ -270,18 +270,6 @@
           </details>
 
           <details class="collapse" name="sections">
-            <summary>Printer</summary>
-            <div>
-              <label for="printerip">Printer IP</label>
-              <input type='text' id='printerip' name='ip' title='Enter the IP address of your Bambulab Printer' value=''>
-              <label for="printercode">Printer Access Code</label>
-              <input type='text' id='printercode' name='code' title='Enter the access code of your Bambulab Printer' value=''>
-              <label for="printerserial">Printer Serial Number</label>
-              <input type='text' id='printerserial' name='serial' title='Enter the serial Number for your Bambulab Printer' value=''>
-            </div>
-          </details>
-
-          <details class="collapse" name="sections">
             <summary>Home Assistant</summary>
             <div>
               <label for="controllerName">Controller Name</label>
@@ -402,6 +390,7 @@
         <details class="collapse" name="sections">
           <summary>Device Tools</summary>
           <div>
+            <a class="button" href="/wifi">Wi-Fi &amp; Printer Setup</a>
             <a class="button" href="/update">Firmware Update</a>
             <a class="button" href="/backuprestore">Backup &amp; Restore</a>
             <a class="button" href="/webserial" target="_blank" rel="noopener">Controller Log</a>
@@ -628,9 +617,6 @@
           }
         } catch (error) { loadFailed(); return; }
         $('firmwareversionText').textContent = 'Firmware Version: ' + (config.firmwareversion || 'Unknown version');
-        $('printerip').value = config.ip;
-        $('printercode').value = config.code;
-        $('printerserial').value = config.id;
         fansSynchronized = config.fansSynchronized !== false;
         fan2Configured = config.fan2Configured === true;
         fan2DraftInitialized = false;

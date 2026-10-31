@@ -4,6 +4,9 @@
 
 - Added **Controller Name**, at the top of the **Home Assistant** section, to tell several controllers apart. It names the device in Home Assistant, which was **BL Smart Flow+** for every controller, and sets the `.local` address, which was always `blflow.local`: `Garage P1S` is at `http://garage-p1s.local/`, as the field shows while you type. A new name reaches Home Assistant when you save. Without a name, both keep their earlier defaults.
 - The **Firmware Update** page now asks for the `.bin.ota` file from `.firmware`, like the BLLED controller's. Its file picker used to hide `.bin.ota` files and offer the `.bin` beside them, a full flash image for USB that an update rejects. It no longer offers `.bin.gz` files either, which the controller can't unpack.
+- Added **Wi-Fi & Printer Setup**, under **Device Tools**, so Wi-Fi no longer needs USB. **Find Networks** lists nearby networks with their signal, and **Find Printers** lists the Bambu Lab printers on your network; choosing one fills in its IP address and serial number. The printer settings moved here from Settings.
+- Without Wi-Fi, the controller now opens its own setup network, **BLSmartFlow-XXXX**, which leads phones to the setup page. This happens when no network is saved, or when the saved one can't be joined at startup; before, the controller then waited, offline, until it was restarted. While no device is connected, it retries the saved network every minute and restarts normally once it joins.
+- An open Wi-Fi network, with no password, can now be used.
 
 ## 1.5.1 — 2026-10-31
 
