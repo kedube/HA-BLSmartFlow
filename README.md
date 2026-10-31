@@ -58,7 +58,7 @@ Versions use **major.feature.build**: the first number changes for a major overh
 
 The compiler and `.firmware` output filenames use the same reserved version. The displayed date comes from the build machine's local date. Web pages load the version from the firmware instead of keeping a separate hardcoded copy.
 
-Each build also writes the OTA-ready image to `build/esp32dev/firmware-<version>.bin`, for example `firmware-1.3.8.bin`. Use this versioned file when uploading through the web UI. PlatformIO's internal `firmware.bin` remains available for its upload and merge steps.
+Each build writes the image for web updates to `.firmware/BLSF_V<version>.bin.ota`, for example `BLSF_V1.5.2.bin.ota`; upload this file on the **Firmware Update** page. `build/esp32dev/firmware-<version>.bin` is the same image. `.firmware/BLSF_V<version>.bin` is different: a full 4 MB flash image, including the bootloader and partition table, for flashing over USB at offset 0, which an update rejects. PlatformIO's internal `firmware.bin` remains available for its upload and merge steps.
 
 #### Settings Page
 
@@ -162,10 +162,10 @@ Under **Web Page Login** in Settings, enter a username and password and save; yo
 
 Requests that change something, whether settings, curves, or firmware, must carry an `X-BLSmartFlow` header, which the controller's own pages send. Another website can't add a custom header without the browser first asking the controller, which never agrees. So another site can't change the controller through your browser, even if your browser has saved the login. Such requests receive 403.
 
-To update the firmware, open **Device Tools** in Settings and choose **Firmware Update**, which opens `/update`, and upload `build/esp32dev/firmware-<version>.bin`. The login and header are checked before anything is written. The controller restarts only after a complete, valid update; otherwise it keeps running the current firmware. From a script, send both:
+To update the firmware, open **Device Tools** in Settings and choose **Firmware Update**, which opens `/update`, and upload `.firmware/BLSF_V<version>.bin.ota`. The login and header are checked before anything is written. The controller restarts only after a complete, valid update; otherwise it keeps running the current firmware. From a script, send both:
 
 ```sh
-curl -u <user>:<password> -H 'X-BLSmartFlow: 1' -F firmware=@build/esp32dev/firmware-1.4.13.bin http://<controller-ip>/update
+curl -u <user>:<password> -H 'X-BLSmartFlow: 1' -F firmware=@.firmware/BLSF_V1.5.2.bin.ota http://<controller-ip>/update
 ```
 
 `/getOptions` and `/submitOptions` use `webUser` and `webPassword`; `/getOptions` returns `webPasswordSet` instead of the password.

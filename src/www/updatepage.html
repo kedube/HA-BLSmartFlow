@@ -16,9 +16,9 @@
         </div>
         <div class="form-container">
             <form enctype="multipart/form-data" id="upload_form" method="post">
-                <p>Upload <code>build/esp32dev/firmware-&lt;version&gt;.bin</code> to update the controller over Wi-Fi.</p>
-                <label for="file1">Firmware file</label>
-                <input accept='.bin,.bin.gz' id="file1" name='firmware' type="file">
+                <p>Upload <code>.firmware/BLSF_V&lt;version&gt;.bin.ota</code> to update the controller over Wi-Fi. The <code>.bin</code> file beside it is a full flash image for USB and can't be used here.</p>
+                <label for="file1">Firmware file (.bin.ota)</label>
+                <input accept='.ota' id="file1" name='firmware' type="file">
                 <progress id="progressBar" max="100" value="0"></progress>
                 <button id="button-send" type="submit" disabled>Update</button>
                 <p class="status-pill" id="status" role="status">Status: Ready</p>
