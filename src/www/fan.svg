@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 106 106">
+<!-- The fan from smartflow_shell.png and smartflow_blades.png: a frame, eight blades and the hub. -->
+<defs><mask id="hub"><circle cx="53" cy="53" r="13" fill="#fff"/><path d="M53 39V67M53 47.6L68 53.2M53 53.3L38 59.3" stroke="#000" stroke-width="1.9"/></mask></defs>
+<g fill="#fff">
+<path fill-rule="evenodd" d="M8.5 0H97.5A8.5 8.5 0 0 1 106 8.5V97.5A8.5 8.5 0 0 1 97.5 106H8.5A8.5 8.5 0 0 1 0 97.5V8.5A8.5 8.5 0 0 1 8.5 0ZM53 4.3A48.7 48.7 0 0 0 53 101.7A48.7 48.7 0 0 0 53 4.3ZM8.4 4.2a4.2 4.2 0 0 0 0 8.4a4.2 4.2 0 0 0 0-8.4ZM8.4 93.4a4.2 4.2 0 0 0 0 8.4a4.2 4.2 0 0 0 0-8.4ZM97.6 4.2a4.2 4.2 0 0 0 0 8.4a4.2 4.2 0 0 0 0-8.4ZM97.6 93.4a4.2 4.2 0 0 0 0 8.4a4.2 4.2 0 0 0 0-8.4Z"/>
+<path id="b" d="M62.5 41.5L66.2 36.6 69.2 31.6 70.5 28.6 71.8 24.9 72.8 21.1 73.5 17.5 74.7 16.1 75.2 15.9 76.5 15.8 78.2 16.4 81 17.8 83.7 19.5 85.3 21.1 87.8 23.9 88.7 25.6 89 27.9 88.8 29.4 88.2 31.1 86.8 33.8 84.7 36.5 81.3 39.9 76.5 44.0 72.8 47.0 67.5 50.2 66.8 47.5 65.7 45.4 64.3 43.5Z"/>
+<use href="#b" transform="rotate(45 53 53)"/><use href="#b" transform="rotate(90 53 53)"/><use href="#b" transform="rotate(135 53 53)"/><use href="#b" transform="rotate(180 53 53)"/><use href="#b" transform="rotate(225 53 53)"/><use href="#b" transform="rotate(270 53 53)"/><use href="#b" transform="rotate(315 53 53)"/>
+<rect width="106" height="106" mask="url(#hub)"/>
+</g>
+</svg>

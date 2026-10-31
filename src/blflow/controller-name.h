@@ -16,7 +16,7 @@ inline String controllerName(const PrinterConfig &config = printerConfig) {
 }
 
 // Host names may hold only letters, digits, and hyphens, so each run of other characters
-// becomes one hyphen: "Garage P1S" is garage-p1s.local. The Settings page shows the same.
+// becomes one hyphen: "Garage P1S" is garage-p1s.local. The setup page shows the same.
 inline String controllerHostname(const PrinterConfig &config = printerConfig) {
     String host;
     bool separated = false;

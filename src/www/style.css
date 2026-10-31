@@ -44,6 +44,8 @@ body {
 }
 
 #header h1 { color: white; text-align: center; margin: 0; text-shadow: 1px 1px black; }
+/* The fan beside each page's title, as on the BLLED controller's pages; Settings shows the live fans instead. */
+#logo { width: 64px; height: 64px; }
 
 .form-container {
   background-color: #fff;
@@ -261,6 +263,8 @@ progress { width: 100%; height: 15px; margin-bottom: 10px; }
 .choice-name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .choice-detail { flex-shrink: 0; color: #666; font-size: .9em; }
 .choice-empty { margin: 0; padding: 8px 10px; color: #666; }
+/* An address wraps whole, not at its hyphens. */
+.address { white-space: nowrap; }
 
 .firmware-version { color: white; text-align: center; font-size: .8rem; margin: 10px 0; }
 .firmware-version a { color: inherit; }

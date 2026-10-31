@@ -272,9 +272,6 @@
           <details class="collapse" name="sections">
             <summary>Home Assistant</summary>
             <div>
-              <label for="controllerName">Controller Name</label>
-              <input type='text' id='controllerName' name='controllerName' maxlength='32' placeholder='BL Smart Flow+' autocomplete='off'>
-              <small>Tells several controllers apart: it names the device in Home Assistant and sets this controller's address, <span id="controllerAddress">http://blflow.local/</span>. Saving a new name moves these pages there.</small>
               <div class="toggle-switch">
                 <label for="haEnabled">Connect to MQTT Broker</label>
                 <label class="switch">
@@ -293,7 +290,7 @@
                 <input type='text' id='haUser' name='haUser' maxlength='64' autocomplete='off'>
                 <label for="haPassword">Password</label>
                 <input type="password" id="haPassword" name="haPassword" maxlength="64" autocomplete="new-password">
-                <small>Fan controls and sensors appear in Home Assistant through MQTT Discovery. The connection is not encrypted, so give the controller its own broker account.</small>
+                <small>Fan controls and sensors appear in Home Assistant through MQTT Discovery, on a device named after the Controller Name in <a href="/wifi">Wi-Fi &amp; Printer Setup</a>. The connection is not encrypted, so give the controller its own broker account.</small>
               </fieldset>
             </div>
           </details>
@@ -306,7 +303,7 @@
               <input type='text' id='webUser' name='webUser' maxlength='32' autocomplete='username'>
               <label for="webPassword">Password</label>
               <input type="password" id="webPassword" name="webPassword" maxlength="64" autocomplete="new-password">
-              <small>Leave the password blank to keep the saved one, or clear the username to remove the login. If you forget it, run the USB Wi-Fi setup again, which clears the login.</small>
+              <small>Leave the password blank to keep the saved one, or clear the username to remove the login. If you forget it, run the <a href="https://dutchdevelop.com/smartflow-configuration-setup/" target="_blank" rel="noopener">Wi-Fi setup over USB</a>, which clears the login.</small>
             </div>
           </details>
         </fieldset>
@@ -394,7 +391,6 @@
             <a class="button" href="/update">Firmware Update</a>
             <a class="button" href="/backuprestore">Backup &amp; Restore</a>
             <a class="button" href="/webserial" target="_blank" rel="noopener">Controller Log</a>
-            <a class="button" href="https://dutchdevelop.com/smartflow-configuration-setup/" target="_blank" rel="noopener">Wi-Fi Setup over USB</a>
             <button type="button" id="toolRestart" class="secondary">Restart Controller</button>
             <p id="restart-status" class="field-help" role="status"></p>
           </div>
@@ -529,12 +525,6 @@
       $('haFields').hidden = $('haFields').disabled = !$('haEnabled').checked;
     }
 
-    // Matches the firmware: each run of characters other than letters and digits becomes one hyphen.
-    function renderControllerAddress() {
-      const host = $('controllerName').value.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase();
-      $('controllerAddress').textContent = 'http://' + (host || 'blflow') + '.local/';
-    }
-
     function renderLoginStatus(protectedPages) {
       $('login-status').textContent = protectedPages ? 'This page and its settings require the login below.'
         : 'No login is set, so anyone on your network can change these settings or the firmware.';
@@ -644,8 +634,6 @@
         for (const name of ['debuging', 'debugingchange', 'mqttdebug']) $(name).checked = config[name] === true;
         $('wifiTxPower').value = String(config.wifiTxPower ?? 78);
         for (const name of ['wifiSleep', 'printerConnection', 'ssdpEnabled']) $(name).checked = config[name] !== false;
-        $('controllerName').value = config.controllerName || '';
-        renderControllerAddress();
         $('haEnabled').checked = config.haEnabled === true;
         $('haHost').value = config.haHost || '';
         $('haPort').value = config.haPort || 1883;
@@ -974,7 +962,6 @@
       markSettingsChanged();
     });
     $('haEnabled').addEventListener('change', () => { renderHomeAssistant(); markSettingsChanged(); });
-    $('controllerName').addEventListener('input', renderControllerAddress);
     for (const suffix of ['', '2']) {
       $('postPrint' + suffix).addEventListener('change', markSettingsChanged);
       for (const [name, other] of [['staticfan', 'followPrinterFan'], ['followPrinterFan', 'staticfan']]) {

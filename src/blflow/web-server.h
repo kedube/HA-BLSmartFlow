@@ -32,6 +32,7 @@ WebServer webServer(80);
 #include "../www/style.h"
 #include "../www/particles.h"
 #include "../www/favicon.h"
+#include "../www/fanIcon.h"
 
 // Requests that change something must carry this header, which the controller's own pages
 // send. Another site cannot add a custom header without the browser first asking this server
@@ -87,6 +88,7 @@ void handleBackupPage() { sendCompressed("text/html", backupRestore_html_gz, bac
 void handleLogPage() { sendCompressed("text/html", webSerialPage_html_gz, webSerialPage_html_gz_len); }
 void handleStyle() { sendCompressed("text/css", style_css_gz, style_css_gz_len); }
 void handleScript() { sendCompressed("text/javascript", particles_js_gz, particles_js_gz_len); }
+void handleFanIcon() { sendCompressed("image/svg+xml", fan_svg_gz, fan_svg_gz_len); }
 
 bool updateAccepted = false;
 
@@ -443,6 +445,7 @@ void handleGetWifiSetup() {
     JsonDocument doc;
     doc["ssid"] = globalVariables.SSID;
     doc["passwordSet"] = globalVariables.APPW[0] != '\0';
+    doc["controllerName"] = printerConfig.controllerName;
     doc["ip"] = printerConfig.printerIP;
     doc["code"] = obfuscate(printerConfig.accessCode);
     doc["id"] = obfuscate(printerConfig.serialNumber);
@@ -515,9 +518,9 @@ void handlePrinters() {
     webServer.send(200, "application/json", response);
 }
 
-// Saves the network and printer, then restarts to join them; the printer connection is also
-// set up only at start. A blank password keeps the saved one for the same network. Another
-// network needs its password, unless the page found it open.
+// Saves the network, controller name and printer, then restarts to join them; the .local address
+// and the printer connection are also set up at start. A blank password keeps the saved one for
+// the same network. Another network needs its password, unless the page found it open.
 void handleSubmitWifiSetup() {
     if (!allowRequest(true)) return;
     const String ssid = webServer.arg("ssid");
@@ -540,6 +543,10 @@ void handleSubmitWifiSetup() {
         !readStringArgument("code", candidate.accessCode) ||
         !readStringArgument("serial", candidate.serialNumber)) {
         webServer.send(400, "text/plain", "Printer field is too long");
+        return;
+    }
+    if (!readTextArgument("controllerName", candidate.controllerName, true)) {
+        webServer.send(400, "text/plain", "The controller name must be 32 characters or fewer");
         return;
     }
     upperCaseSerialNumber(candidate);
@@ -791,6 +798,7 @@ void setupWebserver(){
     });
     webServer.on("/style.css", HTTP_GET, handleStyle);
     webServer.on("/particles.js", HTTP_GET, handleScript);
+    webServer.on("/fan.svg", HTTP_GET, handleFanIcon);
     webServer.on("/submitOptions",HTTP_POST,submitOptions);
     webServer.on("/getOptions", handleGetOptions);
 

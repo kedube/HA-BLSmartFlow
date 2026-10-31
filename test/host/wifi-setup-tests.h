@@ -60,19 +60,21 @@ void wifiSetupTests() {
         assert(request(handleGetWifiSetup) == 200);
         auto json = response();
         assert(json["ssid"] == "test-network" && json["passwordSet"] == true && json["ip"] == "192.0.2.83");
-        assert(json["code"] == "*****234" && json["id"] == "************345");
+        assert(json["code"] == "*****234" && json["id"] == "************345" && json["controllerName"] == "");
         assert(json["accessPoint"] == false && json["address"] == "http://blflow.local/");
         assert(webServer.lastBody.find("test-password") == std::string::npos);
         assert(webServer.lastBody.find("TEST1234") == std::string::npos);
     });
-    check("saving Wi-Fi setup stores the network and printer, then restarts to join them", [] {
+    check("saving Wi-Fi setup stores the network, controller name and printer, then restarts to join them", [] {
         putConfig(legacyConfig); reboot();
         strcpy(printerConfig.BSSID, "02:00:00:00:00:01");
-        assert(wifiSetup({{"ssid","workshop"},{"password","workshop-pass"},{"ip","192.0.2.99"},
-                          {"serial","01p00a123456789"},{"code","12345678"}}) == 200);
+        assert(wifiSetup({{"ssid","workshop"},{"password","workshop-pass"},{"controllerName","  Garage P1S  "},
+                          {"ip","192.0.2.99"},{"serial","01p00a123456789"},{"code","12345678"}}) == 200);
         assert(ESP.restarts == 1 && webServer.responseHeaders["Connection"] == "close");
         reboot();
         assertWifi("workshop", "workshop-pass");
+        assert(std::string(printerConfig.controllerName) == "Garage P1S" && controllerName() == "Garage P1S");
+        handleGetWifiSetup(); assert(response()["address"] == "http://garage-p1s.local/");
         assert(std::string(printerConfig.printerIP) == "192.0.2.99" && std::string(printerConfig.accessCode) == "12345678");
         assert(std::string(printerConfig.serialNumber) == "01P00A123456789");
         assert(!printerConfig.BSSID[0]); // The access point found for the old network
@@ -82,11 +84,13 @@ void wifiSetupTests() {
         reboot();
         assertWifi("workshop", "workshop-pass");
         assert(std::string(printerConfig.serialNumber) == "01P00A123456789" && std::string(printerConfig.accessCode) == "12345678");
-        // An open network, which the page found in its scan, has no password.
-        assert(wifiSetup({{"ssid","Guest"},{"password",""},{"open","on"}}) == 200);
+        // An open network, which the page found in its scan, has no password. Clearing the name
+        // brings back the defaults.
+        assert(wifiSetup({{"ssid","Guest"},{"password",""},{"open","on"},{"controllerName",""}}) == 200);
         reboot();
         assertWifi("Guest", "");
         assert(std::string(printerConfig.printerIP) == "192.0.2.99" && ESP.restarts == 3);
+        assert(controllerName() == "BL Smart Flow+" && controllerHostname() == "blflow");
     });
     check("invalid Wi-Fi setup is refused without saving or restarting", [] {
         putConfig(legacyConfig); reboot();
@@ -95,7 +99,8 @@ void wifiSetupTests() {
             {{"ssid",""},{"password","new-password"}}, {{"ssid",std::string(33,'s')},{"password","new-password"}},
             {{"ssid","workshop"}}, {{"ssid","workshop"},{"password",""}}, {{"ssid","workshop"},{"password","short"}},
             {{"ssid","workshop"},{"password",std::string(64,'p')}}, {{"ssid","test-network"},{"ip","192.0.2.100.200.300"}},
-            {{"ssid","test-network"},{"code","TOO-LONG-CODE"}}, {{"ssid","test-network"},{"serial",std::string(16,'S')}}}) {
+            {{"ssid","test-network"},{"code","TOO-LONG-CODE"}}, {{"ssid","test-network"},{"serial",std::string(16,'S')}},
+            {{"ssid","test-network"},{"controllerName",std::string(33,'n')}}}) {
             assert(wifiSetup(params) == 400);
             assert(savedConfig() == disk && ESP.restarts == 0);
             assertWifi("test-network", "test-password");

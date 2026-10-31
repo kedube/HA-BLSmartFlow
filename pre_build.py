@@ -18,6 +18,7 @@ ASSET_HEADERS = {
     "style.css": "style.h",
     "particles.js": "particles.h",
     "favicon.ico": "favicon.h",
+    "fan.svg": "fanIcon.h",
 }
 
 SUPPORTED_EXTENSIONS = ["*.html", "*.js", "*.css", "*.svg", "*.png", "*.ico"]

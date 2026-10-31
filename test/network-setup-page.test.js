@@ -10,7 +10,7 @@ const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
   .map(match => match[1]).find(script => script.includes('function loadSetup()'));
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const saved = {
-  ssid: 'home', passwordSet: true, ip: '192.0.2.83', code: '*****678', id: '************789',
+  ssid: 'home', passwordSet: true, controllerName: '', ip: '192.0.2.83', code: '*****678', id: '************789',
   accessPoint: false, address: 'http://blflow.local/',
 };
 
@@ -83,6 +83,8 @@ test('the saved network and printer load, and a blank password is kept only for 
   assert.equal(page.get('ssid').value, 'home');
   assert.equal(page.get('wifiPassword').value, '');
   assert.equal(page.get('wifiPassword').placeholder, 'Saved; leave blank to keep');
+  assert.equal(page.get('controllerName').value, '');
+  assert.equal(page.get('controllerAddress').textContent, 'http://blflow.local/');
   assert.equal(page.get('printerip').value, '192.0.2.83');
   assert.equal(page.get('printerserial').value, '************789');
   assert.equal(page.get('printercode').value, '*****678');
@@ -114,13 +116,42 @@ test('saving asks first, sends the fields with the page header, and explains whe
   assert.equal(request.options.headers['X-BLSmartFlow'], '1');
   const body = new URLSearchParams(request.options.body);
   assert.deepEqual(Object.fromEntries(body), {
-    ssid: 'workshop', password: 'new-password', ip: '192.0.2.83', serial: '************789', code: '*****678',
+    ssid: 'workshop', password: 'new-password', controllerName: '', ip: '192.0.2.83', serial: '************789',
+    code: '*****678',
   });
   assert.equal(page.get('setupFields').disabled, true);
   await page.respond('/submitWifiSetup', 200, 'Saved. The controller is restarting.');
   assert.equal(page.get('setup-status').textContent, 'Saved. The controller is restarting to join workshop.');
   assert.equal(page.get('afterSave').hidden, false);
   assert.match(page.get('afterSave').textContent, /^Once it has joined, open http:\/\/blflow\.local\//);
+});
+
+test('the controller name shows its address as you type, and saving gives the new address', async () => {
+  const named = { ...saved, controllerName: 'Garage P1S', address: 'http://garage-p1s.local/' };
+  let page = await readyPage(named);
+  assert.equal(page.get('controllerName').value, 'Garage P1S');
+  assert.equal(page.get('controllerAddress').textContent, 'http://garage-p1s.local/');
+  // The same names as the firmware test, which derives the address it actually uses.
+  for (const [name, host] of [['garage p1s', 'garage-p1s'], ['Café #2 — X1C', 'caf-2-x1c'], ['!!!', 'blflow'], ['', 'blflow']]) {
+    page.get('controllerName').value = name;
+    await page.trigger('controllerName', 'input');
+    assert.equal(page.get('controllerAddress').textContent, `http://${host}.local/`);
+  }
+  // The old address goes away, so the page does not wait for it.
+  page.get('controllerName').value = 'Workshop A1';
+  await page.trigger('setupForm', 'submit');
+  assert.equal(new URLSearchParams(page.pending('/submitWifiSetup').options.body).get('controllerName'), 'Workshop A1');
+  await page.respond('/submitWifiSetup', 200, 'Saved. The controller is restarting.');
+  assert.match(page.get('afterSave').textContent, /^Once it has joined, open http:\/\/workshop-a1\.local\//);
+  assert.equal(page.timers.size, 0);
+  // With the same address, the page returns to Settings once the controller answers.
+  page = await readyPage(named);
+  page.get('controllerName').value = 'garage p1s';
+  await page.trigger('setupForm', 'submit');
+  await page.respond('/submitWifiSetup', 200, 'Saved. The controller is restarting.');
+  await page.advance(2000);
+  await page.respond('/sensorData', 200, {});
+  assert.equal(page.context.location.href, '/');
 });
 
 test('a refused save keeps the fields editable and shows why', async () => {

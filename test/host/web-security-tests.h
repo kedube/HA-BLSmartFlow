@@ -38,7 +38,7 @@ void setLogin() {
 
 // Every page and read-only endpoint, which any client on the network may load unless a login is set.
 const std::vector<void (*)()> pageHandlers = {handleSetup, handleGetOptions, handleGetFanConfig, handleSensorData,
-    handleUpdatePage, handleBackupPage, handleLogPage, handleStyle, handleScript, handleDiag, handleLog,
+    handleUpdatePage, handleBackupPage, handleLogPage, handleStyle, handleScript, handleFanIcon, handleDiag, handleLog,
     handleWifiPage, handleGetWifiSetup, handlePrinters};
 
 void webSecurityTests() {

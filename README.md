@@ -49,10 +49,10 @@ To contribute to the Smartflow project, you'll need the following tools:
 Once the firmware is on the controller, set it up from a phone or computer:
 
 1. Join the Wi-Fi network **BLSmartFlow-XXXX** that the controller opens, where XXXX is the end of its MAC address. It has no password. Most phones then offer the setup page as the network's sign-in page; otherwise open `http://192.168.4.1/`.
-2. Choose **Find Networks**, choose your network, and enter its password. Enter the printer's IP address, serial number, and access code too, or leave them for later.
-3. Choose **Save and Restart**. The controller joins your network. Reconnect your phone or computer to that network and open `http://blflow.local/`, or find the controller in your router's list of devices.
+2. Choose **Find Networks**, choose your network, and enter its password. With more than one controller, give this one a **Controller Name**. Enter the printer's IP address, serial number, and access code too, or leave them for later.
+3. Choose **Save and Restart**. The controller joins your network. Reconnect your phone or computer to that network and open the address shown under **Controller Name**, which is `http://blflow.local/` without a name, or find the controller in your router's list of devices.
 
-The same page, under **Device Tools → Wi-Fi & Printer Setup** in Settings, changes the network or printer later and can find the printers on your network; see [Wi-Fi & Printer Setup](#wi-fi--printer-setup). The [USB setup](https://dutchdevelop.com/smartflow-configuration-setup/) still works as well, and also clears a forgotten Web Page Login.
+The same page, under **Device Tools → Wi-Fi & Printer Setup** in Settings, changes the network, name, or printer later and can find the printers on your network; see [Wi-Fi & Printer Setup](#wi-fi--printer-setup). The [USB setup](https://dutchdevelop.com/smartflow-configuration-setup/) still works as well, and also clears a forgotten Web Page Login.
 
 
 ### Development Notes
@@ -127,11 +127,11 @@ During the timer, its speed takes priority over the normal mode, and **Post Prin
 
 #### Home Assistant
 
-The controller can connect to your Home Assistant MQTT broker, such as the Mosquitto add-on with the MQTT integration. This is a second connection; the printer connection is unchanged. Under **Home Assistant** in Settings, switch on **Connect to MQTT Broker**, enter the broker host and port (usually 1883), add a username and password if the broker needs them, and save. The device appears under *Settings → Devices & services → MQTT* within a few seconds, named **BL Smart Flow+** unless you give it a **Controller Name**. The line below the switch and the Home Assistant icon in the status bar show whether it is connected or why it is not, such as a rejected username or password or a broker that can't be reached. The connection is retried every 5 seconds at first, slowing to once a minute while the broker is unreachable. The **Controller Log**, under **Device Tools**, records each connection attempt and every command applied or ignored, in lines starting with `[HA]`.
+The controller can connect to your Home Assistant MQTT broker, such as the Mosquitto add-on with the MQTT integration. This is a second connection; the printer connection is unchanged. Under **Home Assistant** in Settings, switch on **Connect to MQTT Broker**, enter the broker host and port (usually 1883), add a username and password if the broker needs them, and save. The device appears under *Settings → Devices & services → MQTT* within a few seconds, named **BL Smart Flow+** unless you give it a **Controller Name** in **Wi-Fi & Printer Setup**. The line below the switch and the Home Assistant icon in the status bar show whether it is connected or why it is not, such as a rejected username or password or a broker that can't be reached. The connection is retried every 5 seconds at first, slowing to once a minute while the broker is unreachable. The **Controller Log**, under **Device Tools**, records each connection attempt and every command applied or ignored, in lines starting with `[HA]`.
 
-<img src="images/blsmartflow-home-assistant.png" width="380" alt="Home Assistant section of Settings: the controller named Garage P1S, at http://garage-p1s.local/, connected to the broker at homeassistant.local port 1883 with a saved password">
+<img src="images/blsmartflow-home-assistant.png" width="380" alt="Home Assistant section of Settings, connected to the broker at homeassistant.local port 1883 with a saved password">
 
-With more than one controller, give each a **Controller Name** at the top of the section, such as `Garage P1S`. It names the device in Home Assistant, whose entity names start with it, and sets the controller's address on your network: each run of characters other than letters and digits becomes one hyphen, so `Garage P1S` is at `http://garage-p1s.local/`. The field shows the address as you type. Saving a new name moves the pages to that address and sends the name to Home Assistant at once, unless you renamed the device there; entity IDs created earlier keep their names. Without a name, the device is **BL Smart Flow+** at `http://blflow.local/`. Whatever their names, controllers never share entities, because IDs and topics use each controller's MAC address.
+With more than one controller, give each a **Controller Name** in **Wi-Fi & Printer Setup**, under **Device Tools**, such as `Garage P1S`. It names the device in Home Assistant, whose entity names start with it, and sets the controller's address on your network: each run of characters other than letters and digits becomes one hyphen, so `Garage P1S` is at `http://garage-p1s.local/`. The field shows the address as you type. Saving a new name restarts the controller at that address, and it sends the name to Home Assistant when it reconnects, unless you renamed the device there; entity IDs created earlier keep their names. Without a name, the device is **BL Smart Flow+** at `http://blflow.local/`. Whatever their names, controllers never share entities, because IDs and topics use each controller's MAC address.
 
 The saved password is never sent back to the web page. Leave the field blank to keep it, or clear the username to remove both. To prevent the saved password from being sent to a different broker, you must re-enter it when you change the broker host. Like the Wi-Fi password and printer access code, it is stored on the device in plain text.
 
@@ -165,7 +165,7 @@ Discovery configs are retained under `homeassistant/<component>/blsmartflow_<mac
 
 #### Web Page Login and Firmware Updates
 
-Under **Web Page Login** in Settings, enter a username and password and save; your browser then asks for them. The login protects every page and request, including firmware updates. Until one is set, Settings warns that anyone on your network can change the settings or the firmware. Leave the password blank to keep it, or clear the username to remove the login. If you forget the login, run the USB Wi-Fi setup again, which clears it. The browser sends the login with every request over plain HTTP, so use a password you don't use elsewhere.
+Under **Web Page Login** in Settings, enter a username and password and save; your browser then asks for them. The login protects every page and request, including firmware updates. Until one is set, Settings warns that anyone on your network can change the settings or the firmware. Leave the password blank to keep it, or clear the username to remove the login. If you forget the login, run the [Wi-Fi setup over USB](https://dutchdevelop.com/smartflow-configuration-setup/), which clears it; Settings links to it beside the login. The browser sends the login with every request over plain HTTP, so use a password you don't use elsewhere.
 
 Requests that change something, whether settings, curves, or firmware, must carry an `X-BLSmartFlow` header, which the controller's own pages send. Another website can't add a custom header without the browser first asking the controller, which never agrees. So another site can't change the controller through your browser, even if your browser has saved the login. Such requests receive 403.
 
@@ -193,17 +193,18 @@ The **Debug & Diagnostics** section of Settings holds the **Debugging**, **Debug
 
 #### Wi-Fi & Printer Setup
 
-**Wi-Fi & Printer Setup**, under **Device Tools** in Settings, opens `/wifi`, which sets the Wi-Fi network and the printer:
+**Wi-Fi & Printer Setup**, under **Device Tools** in Settings, opens `/wifi`, which sets the Wi-Fi network, the controller's name, and the printer:
 
 - **Find Networks** scans in the background, so the fans and pages keep running, and lists nearby networks, strongest first, with their signal. Choosing one fills in its name. Leave the password blank to keep the saved one; another network needs its password, unless the scan found it open.
+- **Controller Name** tells several controllers apart. It sets the controller's `.local` address, shown as you type, and names its device in Home Assistant; see [Home Assistant](#home-assistant).
 - **Find Printers** lists the Bambu Lab printers on your network by the name set on each printer, as they announce themselves over SSDP on UDP port 2021. Choosing one fills in its IP address and serial number. The access code is in the printer's network settings, on its screen. The controller listens for two minutes after the page last asked, without pausing the fans.
-- **Save and Restart** saves both and restarts the controller, which joins the network and connects to the printer only when it starts.
+- **Save and Restart** saves them all and restarts the controller, which joins the network, takes its address, and connects to the printer only when it starts.
 
-<img src="images/blsmartflow-wifi-setup.png" width="380" alt="Wi-Fi & Printer Setup page with found networks and their signal strength, the saved network workshop with its password kept, and two found printers, Garage P1S and Office A1, above the printer IP, serial number, and access code fields">
+<img src="images/blsmartflow-wifi-setup.png" width="380" alt="Wi-Fi & Printer Setup page with found networks and their signal strength, the saved network workshop with its password kept, the controller named Garage P1S at http://garage-p1s.local/, and two found printers, Garage P1S and Office A1, above the printer IP, serial number, and access code fields">
 
 When no network is saved, or the controller can't join the saved one when it starts, it opens the open network **BLSmartFlow-XXXX** instead, and every address on that network leads to this page. While no device is connected to it, the controller tries the saved network again every minute and restarts normally once it joins. It doesn't try while a device is connected, because joining can move the radio to another channel and drop that device. A Web Page Login still applies on the setup network. Meanwhile the fans keep running on their settings, without the printer's readings, and the status LED blinks once while no network is saved, or twice while the saved one can't be joined.
 
-`/getWifiSetup` returns `ssid`, `passwordSet` instead of the password, the printer's `ip` with `code` and `id` masked as in `/getOptions`, `accessPoint` while the setup network is open, and the controller's `.local` `address`. `/wifiScan?start=1` starts a scan, and `/wifiScan` answers 202 until the results are ready. `/printers` returns the printers found. `/submitWifiSetup` takes `ssid`, `password`, `open`, `ip`, `serial`, and `code`, and needs the `X-BLSmartFlow` header like other changes.
+`/getWifiSetup` returns `ssid`, `passwordSet` instead of the password, `controllerName`, the printer's `ip` with `code` and `id` masked as in `/getOptions`, `accessPoint` while the setup network is open, and the controller's `.local` `address`. `/wifiScan?start=1` starts a scan, and `/wifiScan` answers 202 until the results are ready. `/printers` returns the printers found. `/submitWifiSetup` takes `ssid`, `password`, `open`, `controllerName`, `ip`, `serial`, and `code`, and needs the `X-BLSmartFlow` header like other changes.
 
 #### Device Tools
 
@@ -213,7 +214,6 @@ The **Device Tools** section of Settings opens:
 - **Firmware Update**, at `/update`, described above.
 - **Backup & Restore**, at `/backuprestore`. **Download Settings** saves the controller's settings file. It contains the Wi-Fi password, printer access code, and the Home Assistant and login passwords in plain text, so downloading it requires a Web Page Login. **Restore Settings** uploads a settings file. The controller replaces its settings only with a complete file that reads as BL Smart Flow+ settings, then restarts. If the restored Wi-Fi settings don't work, the controller opens its setup network.
 - **Controller Log**, at `/webserial`, which shows the USB serial log live in the browser, with pause, clear, and download. The controller keeps the last 8 KB; a page that falls behind marks the gap, and a restart is marked too. The page reads `/log?from=<position>`, which returns the text logged after that position, with `X-Log-Start` and `X-Log-Next` headers.
-- **Wi-Fi Setup over USB**, the original setup page, which also clears a forgotten login.
 - **Restart Controller**, which asks first, then restarts the controller and reloads Settings once it is back.
 
 Downloads, restores, and restarts follow the login and `X-BLSmartFlow` header rules above.
@@ -236,7 +236,7 @@ The native tests use the production firmware handlers and ArduinoJson with simul
 
 In embedded applications, HTML content is efficiently stored in PROGMEM memory. To achieve this, .h files are generated from compressed HTML files for webpages (i.e., `src/www/setuppage.html`) that are run on the device.
 
-- `pre_build.py` runs automatically through `platformio.ini`, compressing web assets into `src/www/www.h` and regenerating the individual `fanpage.h`, `updatePage.h`, `backupRestore.h`, `webSerialPage.h`, `style.h`, `particles.h`, and `favicon.h` headers used by the web server. The pages share `style.css` and the `particles.js` background, served at `/style.css` and `/particles.js`.
+- `pre_build.py` runs automatically through `platformio.ini`, compressing web assets into `src/www/www.h` and regenerating the individual `fanpage.h`, `updatePage.h`, `backupRestore.h`, `webSerialPage.h`, `style.h`, `particles.h`, `favicon.h`, and `fanIcon.h` headers used by the web server. The pages share `style.css`, the `particles.js` background, and the `fan.svg` fan beside each title, served at `/style.css`, `/particles.js`, and `/fan.svg`.
 - Rebuild after editing HTML or the favicon so the generated headers and firmware contain the updated assets.
 
 The favicon overlays the fan blades on the shell, preserving transparency. To regenerate its 16, 32, 48, and 64 pixel sizes with ImageMagick, run:
@@ -244,6 +244,8 @@ The favicon overlays the fan blades on the shell, preserving transparency. To re
 ```sh
 magick src/www/smartflow_shell.png src/www/smartflow_blades.png -compose over -composite -define icon:auto-resize=64,48,32,16 src/www/favicon.ico
 ```
+
+`fan.svg` is the same fan drawn as a vector, so it stays sharp at any size: one blade traced from `smartflow_blades.png` and repeated eight times, with the frame and hub measured from `smartflow_shell.png`.
 
 ### License
 
