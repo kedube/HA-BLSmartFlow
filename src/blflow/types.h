@@ -5,6 +5,7 @@
 #include "fan-curve.h"
 #include "printer-fan.h"
 #include "post-print-types.h"
+#include "control-mode.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -16,8 +17,11 @@ extern "C"
         double nozzletemp = 0;
         bool online = false;
         bool printWasRunning = false;
+        bool printInProgress = false;   // RUNNING since the last end state, even across reconnects
         PostPrintRun postPrint[2];
         String errorcode = "";
+        int printStage = -1;            // stg_cur; -1 until reported
+        uint64_t hmsCode = 0;           // Most severe HMS code reported, or 0
         //Time since
         unsigned long disconnectMQTTms = 0;        
     } PrinterVariables;
@@ -32,6 +36,8 @@ extern "C"
         int fanSpeed2 = 0;
         // Increments when Settings change, so open web pages can reload them.
         uint32_t settingsRevision = 0;
+        // Hybrid control: Home Assistant has set a fan speed since the printer last had control.
+        bool haOverride = false;
     } GlobalVariables;
     GlobalVariables globalVariables;
 
@@ -74,6 +80,9 @@ extern "C"
         int haPort = 1883;
         char haUser[65] = "";
         char haPassword[65] = "";
+        ControlMode controlMode = ControlMode::Hybrid;
+        int haFanSpeed = 0;             // Speeds Home Assistant last held the fans at
+        int haFanSpeed2 = 0;
 
         // Web page login; both empty leaves the pages open.
         char webUser[33] = "";

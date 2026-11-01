@@ -2,10 +2,12 @@
 #define BLFLOW_HOME_ASSISTANT_H
 
 // Home Assistant integration over a second MQTT connection, to the user's broker.
-// MQTT Discovery creates sensors for monitoring and controls that mirror the fan
-// Settings. Commands are saved to flash before they run, like web page changes.
-// The printer connection is unaffected. The connection is plain MQTT: a second
-// TLS session alongside the printer's leaves the ESP32 short of memory.
+// MQTT Discovery creates sensors for monitoring, controls that mirror the fan
+// Settings, fan entities that set the speeds directly under the control mode, and
+// the BLLED controller's diagnostics and Restart button. Commands are saved to flash
+// before they run, like web page changes. The printer connection is unaffected. The
+// connection is plain MQTT: a second TLS session alongside the printer's leaves the
+// ESP32 short of memory.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -17,6 +19,7 @@
 
 #include "connect-timeout.h"
 #include "controller-name.h"
+#include "diagnostics.h"
 #include "types.h"
 #include "fan-config.h"
 #include "fans.h"
@@ -24,16 +27,20 @@
 #include "log-serial.h"
 #include "mqtt-report.h"
 #include "post-print.h"
+#include "printer-error.h"
 
 const uint32_t haRetryMinimumMs = 5000;
 const uint32_t haRetryMaximumMs = 60000;
 const uint32_t haStateIntervalMs = 1000;
+const uint32_t haDiagnosticsIntervalMs = 60000;
 const char *const haBirthTopic = "homeassistant/status";
 
 constexpr int haModeCurve = 0, haModeStatic = 1, haModeFollow = 2;
 const char *const haModeNames[] = {"Temperature Curve", "Static Fan Speed", "Follow Printer Fan"};
 // Indexed by PrinterFanSource, with the Settings page's labels.
 const char *const haSourceNames[] = {"Part Cooling Fan", "Auxiliary Cooling Fan", "Chamber/Exhaust Fan", "Hotend/Heatbreak Fan"};
+// Indexed by ControlMode, with the BLLED controller's names.
+const char *const haControlModeNames[] = {"Printer", "HomeAssistant", "Hybrid"};
 
 WiFiClient haClient;
 PubSubClient haMqtt(haClient);
@@ -42,13 +49,16 @@ String haNodeId;        // blsmartflow_<mac>; also the client ID, so a reboot re
 String haBaseTopic;     // blsmartflow/<mac>
 String haLastState;
 int haLastFan2Online = -1;
+int haLastControlOnline = -1;
 bool haConfigured = false;
 bool haAttempted = false;
 bool haDiscoveryPending = false;
 bool haStatePending = false;
+bool haRestartPending = false;
 uint32_t haLastAttempt = 0;
 uint32_t haRetryMs = 0;  // Wait before the next attempt; grows while attempts fail
 uint32_t haLastStateCheck = 0;
+uint32_t haLastDiagnostics = 0;
 
 // --- Settings ---------------------------------------------------------------
 
@@ -63,7 +73,8 @@ inline bool haPasswordExposed(const PrinterConfig &before, const PrinterConfig &
 }
 
 inline bool sameFanSettings(PrinterConfig &a, PrinterConfig &b) {
-    if (a.fansSynchronized != b.fansSynchronized || a.fanGraph2 != b.fanGraph2) return false;
+    if (a.fansSynchronized != b.fansSynchronized || a.fanGraph2 != b.fanGraph2 || a.controlMode != b.controlMode ||
+        a.haFanSpeed != b.haFanSpeed || a.haFanSpeed2 != b.haFanSpeed2) return false;
     for (int fan = 0; fan < 2; ++fan) {
         const FanSettings x = fanSettings(a, fan), y = fanSettings(b, fan);
         if (x.staticEnabled != y.staticEnabled || x.staticSpeed != y.staticSpeed ||
@@ -102,19 +113,46 @@ int haOptionIndex(const String &value, const char *const (&options)[N]) {
     return -1;
 }
 
+// The fan entities: on and off, or a percentage. Home Assistant takes over at the current
+// speeds, so the other fan keeps running as it was. Printer mode ignores them.
+bool haReadFanSpeed(int fan, bool percentage, const String &value, PrinterConfig &config) {
+    if (config.controlMode == ControlMode::Printer) return false;
+    if (!homeAssistantControlsFans(config)) holdCurrentSpeeds(config);
+    int &speed = fan == 0 ? config.haFanSpeed : config.haFanSpeed2;
+    if (percentage) return haReadNumber(value, 0, 100, speed);
+    bool on;
+    if (!haReadSwitch(value, on)) return false;
+    // Turning on a running fan keeps its speed.
+    if (!on) speed = 0;
+    else if (speed == 0) speed = 100;
+    return true;
+}
+
 // Stages one command. Rejects unknown keys, invalid values, and Fan 2 while synchronized.
-bool haReadCommand(const char *key, const String &value, PrinterConfig &config) {
+// speedCommand is set for the fan entities, which change no Settings.
+bool haReadCommand(const char *key, const String &value, PrinterConfig &config, bool &speedCommand) {
     if (strcmp(key, "synchronized") == 0) {
         if (!haReadSwitch(value, config.fansSynchronized)) return false;
         if (!config.fansSynchronized) initializeSecondFan(config);
         return true;
     }
+    if (strcmp(key, "control_mode") == 0) {
+        const int mode = haOptionIndex(value, haControlModeNames);
+        if (mode < 0) return false;
+        setControlMode(config, static_cast<ControlMode>(mode));
+        return true;
+    }
     int fan;
-    if (strncmp(key, "fan1_", 5) == 0) fan = 0;
-    else if (strncmp(key, "fan2_", 5) == 0) fan = 1;
+    if (strncmp(key, "fan1", 4) == 0) fan = 0;
+    else if (strncmp(key, "fan2", 4) == 0) fan = 1;
     else return false;
     // As on the Settings page, Fan 2's settings are dormant while synchronized.
     if (fan == 1 && config.fansSynchronized) return false;
+    if (key[4] == '\0' || strcmp(key + 4, "_percentage") == 0) {
+        speedCommand = true;
+        return haReadFanSpeed(fan, key[4] != '\0', value, config);
+    }
+    if (key[4] != '_') return false;
     const char *setting = key + 5;
     FanSettings settings = fanSettings(config, fan);
     if (strcmp(setting, "mode") == 0) {
@@ -139,21 +177,52 @@ bool haReadCommand(const char *key, const String &value, PrinterConfig &config) 
     return false;
 }
 
+// Hybrid: hand the fans back to the printer without waiting for a print to start.
+void haResumePrinterControl() {
+    if (!globalVariables.haOverride) return;
+    globalVariables.haOverride = false;
+    fanloop();
+    LogSerial.println(F("[HA] The printer has the fans again"));
+}
+
 void haApplyCommand(const char *key, const String &value) {
+    if (strcmp(key, "resume") == 0) {
+        haResumePrinterControl();
+        return;
+    }
+    if (strcmp(key, "restart") == 0) {
+        haRestartPending = true; // After loop() returns, so the offline status can be published
+        return;
+    }
     PrinterConfig candidate = printerConfig;
-    if (!haReadCommand(key, value, candidate)) {
+    bool speedCommand = false;
+    if (!haReadCommand(key, value, candidate, speedCommand)) {
         LogSerial.print(F("[HA] Ignored command "));
         LogSerial.print(key);
         LogSerial.print(F(": "));
         LogSerial.println(value);
         return;
     }
-    if (sameFanSettings(printerConfig, candidate)) return;
-    if (!saveFileSystem(candidate)) {
+    // In Hybrid, a speed takes the fans over from the printer even when it matches theirs.
+    const bool takeOver = speedCommand && !homeAssistantControlsFans();
+    const bool changed = !sameFanSettings(printerConfig, candidate);
+    if (!changed && !takeOver) return;
+    if (changed && !saveFileSystem(candidate)) {
         LogSerial.println(F("[HA] Failed to save the command; settings unchanged"));
         return;
     }
-    applySettings(std::move(candidate));
+    if (takeOver) {
+        globalVariables.haOverride = true;
+        LogSerial.println(F("[HA] Home Assistant has the fans until the next print starts"));
+    }
+    if (speedCommand) {
+        // Not a Settings change, so open pages need not reload.
+        printerConfig.haFanSpeed = candidate.haFanSpeed;
+        printerConfig.haFanSpeed2 = candidate.haFanSpeed2;
+        fanloop();
+    } else {
+        applySettings(std::move(candidate));
+    }
     LogSerial.print(F("[HA] Applied "));
     LogSerial.print(key);
     LogSerial.print(F(": "));
@@ -200,22 +269,45 @@ void haAddDevice(JsonObject device) {
     device["configuration_url"] = String("http://") + WiFi.localIP().toString() + "/";
 }
 
+// Topics an entity needs online besides the controller's status: Fan 2's, offline while the
+// fans are synchronized, and the fan entities', offline in Printer mode.
+constexpr int haFan2Availability = 1, haControlAvailability = 2;
+
 // Adds the fields every entity shares, then publishes its retained discovery config.
-void haPublishEntity(const char *component, const String &key, const String &name, JsonDocument &config,
-                     bool control, bool fan2Setting) {
+void haPublishConfig(const char *component, const String &key, const String &name, JsonDocument &config,
+                     int availabilities = 0) {
     config["name"] = name;
     config["unique_id"] = haNodeId + "_" + key;
+    JsonArray availability = config["availability"].to<JsonArray>();
+    availability.add<JsonObject>()["topic"] = haBaseTopic + "/status";
+    if (availabilities & haFan2Availability) availability.add<JsonObject>()["topic"] = haBaseTopic + "/fan2/availability";
+    if (availabilities & haControlAvailability) availability.add<JsonObject>()["topic"] = haBaseTopic + "/control/availability";
+    if (availabilities) config["availability_mode"] = "all";
+    haAddDevice(config["device"].to<JsonObject>());
+    haPublishJson(String("homeassistant/") + component + "/" + haNodeId + "/" + key + "/config", config);
+}
+
+// An entity that reads its field from the state.
+void haPublishEntity(const char *component, const String &key, const String &name, JsonDocument &config,
+                     bool control, bool fan2Setting) {
     config["state_topic"] = haBaseTopic + "/state";
     config["value_template"] = String("{{ value_json.") + key + " }}";
     if (control) config["command_topic"] = haBaseTopic + "/set/" + key;
-    JsonArray availability = config["availability"].to<JsonArray>();
-    availability.add<JsonObject>()["topic"] = haBaseTopic + "/status";
-    if (fan2Setting) {
-        availability.add<JsonObject>()["topic"] = haBaseTopic + "/fan2/availability";
-        config["availability_mode"] = "all";
-    }
-    haAddDevice(config["device"].to<JsonObject>());
-    haPublishJson(String("homeassistant/") + component + "/" + haNodeId + "/" + key + "/config", config);
+    haPublishConfig(component, key, name, config, fan2Setting ? haFan2Availability : 0);
+}
+
+// Wi-Fi and memory change constantly, so they have their own topic, sent once a minute.
+void haPublishDiagnostic(const char *key, const char *name, JsonDocument &config) {
+    config["state_class"] = "measurement";
+    config["entity_category"] = "diagnostic";
+    config["state_topic"] = haBaseTopic + "/diagnostics";
+    config["value_template"] = String("{{ value_json.") + key + " }}";
+    haPublishConfig("sensor", key, name, config);
+}
+
+void haPublishButton(const char *key, const char *name, JsonDocument &config) {
+    config["command_topic"] = haBaseTopic + "/set/" + key;
+    haPublishConfig("button", key, name, config);
 }
 
 template <size_t N>
@@ -249,6 +341,49 @@ void haPublishDiscovery() {
     }
     {
         JsonDocument config;
+        config["device_class"] = "problem";
+        config["json_attributes_topic"] = haBaseTopic + "/state";
+        config["json_attributes_template"] = "{{ {'hms_code': value_json.hms_code, 'hms_severity': value_json.hms_severity} | tojson }}";
+        haPublishEntity("binary_sensor", "printer_error", "Printer error", config, false, false);
+    }
+    {
+        JsonDocument config;
+        haAddOptions(config, haControlModeNames);
+        config["icon"] = "mdi:cog-transfer";
+        haPublishEntity("select", "control_mode", "Control mode", config, true, false);
+    }
+    {
+        JsonDocument config;
+        config["icon"] = "mdi:home-assistant";
+        haPublishEntity("binary_sensor", "override", "Home Assistant override", config, false, false);
+    }
+    {
+        JsonDocument config;
+        config["icon"] = "mdi:printer-3d";
+        haPublishButton("resume", "Resume printer control", config);
+    }
+    {
+        JsonDocument config;
+        config["device_class"] = "restart";
+        config["entity_category"] = "config";
+        haPublishButton("restart", "Restart", config);
+    }
+    {
+        JsonDocument config;
+        config["device_class"] = "signal_strength";
+        config["unit_of_measurement"] = "dBm";
+        haPublishDiagnostic("rssi", "WiFi signal", config);
+    }
+    const char *const memorySensors[][2] = {{"free_memory", "Free memory"}, {"largest_block", "Largest free memory block"}};
+    for (const auto &sensor : memorySensors) {
+        JsonDocument config;
+        config["device_class"] = "data_size";
+        config["unit_of_measurement"] = "B";
+        config["icon"] = "mdi:memory";
+        haPublishDiagnostic(sensor[0], sensor[1], config);
+    }
+    {
+        JsonDocument config;
         config["icon"] = "mdi:link-variant";
         config["entity_category"] = "config";
         haPublishEntity("switch", "synchronized", "Synchronize fans", config, true, false);
@@ -257,6 +392,21 @@ void haPublishDiscovery() {
         const String key = String("fan") + String(fan + 1) + "_";
         const String label = String("Fan ") + String(fan + 1) + " ";
         const bool fan2Setting = fan == 1;
+        {
+            // Shows the output, whoever drives it, and sets the speed while Home Assistant may.
+            const String entity = String("fan") + String(fan + 1);
+            JsonDocument config;
+            config["state_topic"] = haBaseTopic + "/state";
+            config["state_value_template"] = String("{{ value_json.") + entity + " }}";
+            config["command_topic"] = haBaseTopic + "/set/" + entity;
+            config["percentage_state_topic"] = haBaseTopic + "/state";
+            config["percentage_value_template"] = String("{{ value_json.") + key + "speed }}";
+            config["percentage_command_topic"] = haBaseTopic + "/set/" + key + "percentage";
+            config["speed_range_min"] = 1;
+            config["speed_range_max"] = 100;
+            haPublishConfig("fan", entity, String("Fan ") + String(fan + 1), config,
+                            haControlAvailability | (fan2Setting ? haFan2Availability : 0));
+        }
         {
             JsonDocument config;
             config["unit_of_measurement"] = "%";
@@ -314,7 +464,12 @@ void haPublishDiscovery() {
     LogSerial.println(F("[HA] Published discovery configs"));
 }
 
-// Publishes the retained state when it has changed; every entity reads its field from it.
+// Retained, and sent only when it changes.
+void haPublishAvailability(const char *topic, bool online, int &last) {
+    if (online != last && haPublish(haBaseTopic + topic, online ? "online" : "offline")) last = online;
+}
+
+// Publishes the retained state when it has changed; every entity but the diagnostics reads its field from it.
 void haPublishState() {
     const uint32_t now = millis();
     haLastStateCheck = now;
@@ -322,12 +477,24 @@ void haPublishState() {
     JsonDocument doc;
     doc["temperature"] = std::round(printerVariables.nozzletemp * 10) / 10;
     doc["printer_connected"] = printerVariables.online ? "ON" : "OFF";
+    doc["printer_error"] = printerError() ? "ON" : "OFF";
+    if (printerVariables.hmsCode) {
+        doc["hms_code"] = hmsCodeText(printerVariables.hmsCode);
+        doc["hms_severity"] = hmsSeverityName(hmsSeverity(printerVariables.hmsCode));
+    } else {
+        doc["hms_code"] = nullptr;
+        doc["hms_severity"] = nullptr;
+    }
+    doc["control_mode"] = haControlModeNames[static_cast<int>(printerConfig.controlMode)];
+    doc["override"] = globalVariables.haOverride ? "ON" : "OFF";
     doc["synchronized"] = printerConfig.fansSynchronized ? "ON" : "OFF";
     for (int fan = 0; fan < 2; ++fan) {
         const String key = String("fan") + String(fan + 1) + "_";
         // Until Fan 2 is first configured, its settings match Fan 1's, as on the Settings page.
         const FanSettings settings = fanSettings(printerConfig, fan == 1 && !printerConfig.fanGraph2.empty() ? 1 : 0);
-        doc[key + "speed"] = fan == 0 ? globalVariables.fanSpeed : globalVariables.fanSpeed2;
+        const int speed = fan == 0 ? globalVariables.fanSpeed : globalVariables.fanSpeed2;
+        doc[String("fan") + String(fan + 1)] = speed > 0 ? "ON" : "OFF";
+        doc[key + "speed"] = speed;
         doc[key + "post_print_remaining"] = postPrintSecondsRemaining(fan, now);
         doc[key + "mode"] = haModeNames[haModeIndex(settings)];
         doc[key + "static_speed"] = settings.staticSpeed;
@@ -339,11 +506,17 @@ void haPublishState() {
     String payload;
     serializeJson(doc, payload);
     if (payload != haLastState && haPublish(haBaseTopic + "/state", payload)) haLastState = payload;
-    const int fan2Online = printerConfig.fansSynchronized ? 0 : 1;
-    if (fan2Online != haLastFan2Online &&
-        haPublish(haBaseTopic + "/fan2/availability", fan2Online ? "online" : "offline")) {
-        haLastFan2Online = fan2Online;
-    }
+    haPublishAvailability("/fan2/availability", !printerConfig.fansSynchronized, haLastFan2Online);
+    haPublishAvailability("/control/availability", printerConfig.controlMode != ControlMode::Printer, haLastControlOnline);
+}
+
+void haPublishDiagnostics() {
+    haLastDiagnostics = millis();
+    JsonDocument doc;
+    doc["rssi"] = WiFi.RSSI();
+    doc["free_memory"] = freeMemory();
+    doc["largest_block"] = largestFreeBlock();
+    haPublishJson(haBaseTopic + "/diagnostics", doc);
 }
 
 void haPublishAll() {
@@ -352,8 +525,9 @@ void haPublishAll() {
     haPublish(haBaseTopic + "/status", "online");
     // Republish the state too, in case the broker lost its retained copy.
     haLastState = "";
-    haLastFan2Online = -1;
+    haLastFan2Online = haLastControlOnline = -1;
     haPublishState();
+    haPublishDiagnostics();
 }
 
 // --- Connection -------------------------------------------------------------
@@ -433,8 +607,19 @@ void homeAssistantLoop() {
     }
     haMqtt.loop();
     if (!haMqtt.connected()) return;
+    if (haRestartPending) {
+        haRestartPending = false;
+        LogSerial.println(F("[HA] Restart requested from Home Assistant"));
+        // A clean disconnect does not send the will, so mark the entities unavailable first.
+        haPublish(haBaseTopic + "/status", "offline");
+        haMqtt.disconnect();
+        delay(500);
+        ESP.restart();
+        return;
+    }
     if (haDiscoveryPending) haPublishAll();
     if (haStatePending || millis() - haLastStateCheck >= haStateIntervalMs) haPublishState();
+    if (millis() - haLastDiagnostics >= haDiagnosticsIntervalMs) haPublishDiagnostics();
 }
 
 #endif

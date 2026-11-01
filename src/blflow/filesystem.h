@@ -54,6 +54,9 @@ bool saveFileSystem(const PrinterConfig &config = printerConfig){
     json["haPort"] = config.haPort;
     json["haUser"] = config.haUser;
     json["haPassword"] = config.haPassword;
+    json["controlMode"] = controlModeName(config.controlMode);
+    json["haFanSpeed"] = config.haFanSpeed;
+    json["haFanSpeed2"] = config.haFanSpeed2;
     json["webUser"] = config.webUser;
     json["webPassword"] = config.webPassword;
     json["wifiTxPower"] = config.wifiTxPower;
@@ -164,6 +167,9 @@ void loadFileSystem(){
         const int haPort = json["haPort"] | loaded.haPort;
         if (haPort >= 1 && haPort <= 65535) loaded.haPort = haPort;
         loaded.haEnabled = (json["haEnabled"] | false) && strlen(loaded.haHost) > 0;
+        readControlMode(json["controlMode"], loaded.controlMode);
+        loaded.haFanSpeed = clampFanSpeed(json["haFanSpeed"] | 0);
+        loaded.haFanSpeed2 = clampFanSpeed(json["haFanSpeed2"] | 0);
         snprintf(loaded.webUser, sizeof(loaded.webUser), "%s", json["webUser"] | "");
         snprintf(loaded.webPassword, sizeof(loaded.webPassword), "%s", json["webPassword"] | "");
         const int wifiTxPower = json["wifiTxPower"] | loaded.wifiTxPower;

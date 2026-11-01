@@ -3,7 +3,15 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include "types.h"
+
+// Memory that ordinary allocations (String, JSON, TLS buffers) can use. ESP.getFreeHeap() and
+// ESP.getMaxAllocHeap() also count the leftover instruction RAM, about 50 kB, which takes only
+// 32-bit accesses, so they overstate it.
+inline uint32_t freeMemory() { return heap_caps_get_free_size(MALLOC_CAP_8BIT); }
+inline uint32_t minFreeMemory() { return heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT); }
+inline uint32_t largestFreeBlock() { return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT); }
 
 // Wi-Fi transmit powers offered under Debug & Diagnostics, in the radio's quarter-dBm steps.
 const int wifiTxPowers[] = {78, 68, 60, 52, 44, 34, 20, 8};

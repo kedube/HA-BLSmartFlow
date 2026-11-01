@@ -89,7 +89,7 @@ void diagnosticsTests() {
         assert(json["uptime"] == 2 * 86400 + 5 && json["resetReason"] == "brownout");
         assert(json["ssid"] == "test-network" && json["rssi"] == -61 && json["channel"] == 6);
         assert(json["wifiTxPower"] == 78 && json["wifiSleep"] == true && json["ssdpEnabled"] == true);
-        assert(json["freeHeap"] == 150000 && json["minFreeHeap"] == 90000 && json["maxAllocHeap"] == 65524);
+        assert(json["freeHeap"] == 98000 && json["minFreeHeap"] == 61000 && json["maxAllocHeap"] == 45044);
         assert(json["homeAssistant"] == "connecting" && json["firmware"].as<std::string>().find("host-test") != std::string::npos);
         for (const char *secret : {"broker-secret", "TEST1234", "test-password"}) {
             assert(webServer.lastBody.find(secret) == std::string::npos);

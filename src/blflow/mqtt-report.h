@@ -5,6 +5,7 @@
 #include "log-serial.h"
 #include "types.h"
 #include "post-print.h"
+#include "printer-error.h"
 
 inline bool readUnsignedText(const char *text, uint32_t maximum, uint32_t &result) {
     if (!text || !*text) return false;
@@ -54,6 +55,8 @@ inline bool parsePrinterReport(const uint8_t *payload, size_t length) {
     filter["print"]["fan_gear"] = true;
     filter["print"]["nozzle_temper"] = true;
     filter["print"]["gcode_state"] = true;
+    filter["print"]["stg_cur"] = true;
+    filter["print"]["hms"] = true;
     const char *fields[] = {"cooling_fan_speed", "big_fan1_speed", "big_fan2_speed", "heatbreak_fan_speed"};
     for (const char *field : fields) filter["print"][field] = true;
     JsonDocument message;
@@ -91,6 +94,24 @@ inline bool parsePrinterReport(const uint8_t *payload, size_t length) {
             printerVariables.nozzletemp = temperature;
             changed = true;
         }
+    }
+    // For Home Assistant's Printer error sensor. Delta updates without these keep the last values.
+    const bool wasError = printerError();
+    const uint64_t previousHms = printerVariables.hmsCode;
+    if (report["stg_cur"].is<int>()) printerVariables.printStage = report["stg_cur"].as<int>();
+    if (report["hms"].is<JsonArrayConst>()) recordHms(report["hms"].as<JsonArrayConst>());
+    if (printerError() != wasError || printerVariables.hmsCode != previousHms) {
+        LogSerial.print(F("Printer error: "));
+        LogSerial.print(printerError() ? F("yes") : F("no"));
+        if (printerVariables.hmsCode) {
+            LogSerial.print(F(", "));
+            LogSerial.print(hmsSeverityName(hmsSeverity(printerVariables.hmsCode)));
+            LogSerial.print(F(" "));
+            LogSerial.print(hmsCodeText(printerVariables.hmsCode));
+        }
+        LogSerial.print(F(", stage "));
+        LogSerial.println(printerVariables.printStage);
+        changed = true;
     }
     // Missing fields are delta updates; retain each fan's last valid reading,
     // including through disconnects. Readings start at 0% after boot.

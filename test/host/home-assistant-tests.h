@@ -3,6 +3,7 @@
 
 const std::string haNode = "blsmartflow_aabbcc0d0e0f";
 const std::string haBase = "blsmartflow/aabbcc0d0e0f";
+const int haEntityCount = 29;
 
 void enableHomeAssistant(std::map<std::string,String> extra = {}) {
     std::map<std::string,String> params = {{"haEnabled","on"},{"haHost","homeassistant.local"},{"haPort","1883"},
@@ -30,13 +31,17 @@ const Published *lastPublished(const std::string &topic) {
     return nullptr;
 }
 
-JsonDocument haState() {
-    const Published *message = lastPublished(haBase + "/state");
+JsonDocument haJson(const std::string &topic) {
+    const Published *message = lastPublished(topic);
     assert(message && message->retained);
     JsonDocument json;
     assert(!deserializeJson(json, message->payload));
     return json;
 }
+
+JsonDocument haState() { return haJson(haBase + "/state"); }
+
+std::string availability(const std::string &name) { return lastPublished(haBase + "/" + name + "/availability")->payload; }
 
 int discoveryCount() {
     int count = 0;
@@ -133,7 +138,9 @@ void homeAssistantTests() {
         const std::set<std::string> subscriptions(haMqtt.subscriptions.begin(), haMqtt.subscriptions.end());
         assert(subscriptions == std::set<std::string>({haBase + "/set/+", "homeassistant/status"}));
         const JsonDocument state = haState();
+        const JsonDocument diagnostics = haJson(haBase + "/diagnostics");
         std::set<std::string> keys;
+        std::map<std::string, std::string> components;
         size_t lastDiscovery = 0;
         for (size_t i = 0; i < haMqtt.published.size(); ++i) {
             const Published &message = haMqtt.published[i];
@@ -145,26 +152,44 @@ void homeAssistantTests() {
             assert(uniqueId.rfind(haNode + "_", 0) == 0);
             const std::string key = uniqueId.substr(haNode.size() + 1);
             assert(keys.insert(key).second);
-            assert(message.topic.size() > key.size() + 8 &&
-                   message.topic.compare(message.topic.size() - key.size() - 8, std::string::npos,
-                                         "/" + key + "/config") == 0);
-            assert(message.topic.find("/" + haNode + "/") != std::string::npos);
-            assert(config["state_topic"] == haBase + "/state");
-            assert(config["value_template"] == "{{ value_json." + key + " }}");
-            assert(!state[key].isNull()); // Each entity reads a field that the state provides.
+            const std::string component = message.topic.substr(14, message.topic.find('/', 14) - 14);
+            components[key] = component;
+            assert(message.topic == "homeassistant/" + component + "/" + haNode + "/" + key + "/config");
             assert(config["device"]["identifiers"][0] == haNode);
             assert(config["device"]["configuration_url"] == "http://192.0.2.10/");
             const bool control = !config["command_topic"].isNull();
             if (control) assert(config["command_topic"] == haBase + "/set/" + key);
-            const bool fan2Setting = control && key.rfind("fan2_", 0) == 0;
-            assert(config["availability"].size() == (fan2Setting ? 2u : 1u));
-            assert(config["availability"][0]["topic"] == haBase + "/status");
-            if (fan2Setting) {
-                assert(config["availability"][1]["topic"] == haBase + "/fan2/availability");
-                assert(config["availability_mode"] == "all");
+            // Each entity reads a field that its topic provides.
+            std::vector<std::string> needed;
+            if (component == "button") {
+                assert(control && config["state_topic"].isNull());
+            } else if (component == "fan") {
+                assert(control && config["state_topic"] == haBase + "/state" && config["percentage_state_topic"] == haBase + "/state");
+                assert(config["state_value_template"] == "{{ value_json." + key + " }}" && !state[key].isNull());
+                assert(config["percentage_value_template"] == "{{ value_json." + key + "_speed }}" && !state[key + "_speed"].isNull());
+                assert(config["percentage_command_topic"] == haBase + "/set/" + key + "_percentage");
+                assert(config["speed_range_min"] == 1 && config["speed_range_max"] == 100);
+                needed.push_back(haBase + "/control/availability");
+            } else {
+                const bool diagnostic = config["state_topic"] == haBase + "/diagnostics";
+                assert(diagnostic || config["state_topic"] == haBase + "/state");
+                assert(config["value_template"] == "{{ value_json." + key + " }}");
+                assert(!(diagnostic ? diagnostics : state)[key].isNull());
+                if (diagnostic) assert(config["entity_category"] == "diagnostic" && component == "sensor");
             }
+            if (control && key.rfind("fan2", 0) == 0) needed.insert(needed.begin(), haBase + "/fan2/availability");
+            assert(config["availability"].size() == needed.size() + 1);
+            assert(config["availability"][0]["topic"] == haBase + "/status");
+            for (size_t n = 0; n < needed.size(); ++n) assert(config["availability"][n + 1]["topic"] == needed[n]);
+            assert(config["availability_mode"].isNull() == needed.empty());
+            if (!needed.empty()) assert(config["availability_mode"] == "all");
         }
-        assert(keys.size() == 19);
+        assert(keys.size() == haEntityCount);
+        assert(components["fan1"] == "fan" && components["fan2"] == "fan" && components["control_mode"] == "select");
+        assert(components["restart"] == "button" && components["resume"] == "button");
+        assert(components["override"] == "binary_sensor" && components["printer_error"] == "binary_sensor");
+        for (const char *key : {"rssi", "free_memory", "largest_block"}) assert(components[key] == "sensor");
+        assert(diagnostics["rssi"] == -61 && diagnostics["free_memory"] == 98000 && diagnostics["largest_block"] == 45044);
         // Discovery precedes "online", so Home Assistant knows the entities first.
         const Published *online = lastPublished(haBase + "/status");
         assert(online && online->payload == "online" && online->retained);
@@ -173,9 +198,11 @@ void homeAssistantTests() {
         assert(state["fan1_mode"] == "Temperature Curve" && state["fan1_source"] == "Chamber/Exhaust Fan");
         assert(state["fan1_post_print"] == "OFF" && state["fan1_post_print_seconds"] == 600);
         assert(state["fan2_post_print_speed"] == 100 && state["fan2_static_speed"] == 0);
-        assert(lastPublished(haBase + "/fan2/availability")->payload == "offline");
+        assert(state["control_mode"] == "Hybrid" && state["override"] == "OFF" && state["printer_error"] == "OFF");
+        assert(state["fan1"] == "OFF" && state["hms_code"].isNull() && state["hms_severity"].isNull());
+        assert(availability("fan2") == "offline" && availability("control") == "online");
         handleSensorData(); auto json = response();
-        assert(json["homeAssistant"] == "connected" && json["homeAssistantState"] == 0);
+        assert(json["homeAssistant"] == "connected" && json["homeAssistantState"] == 0 && json["homeAssistantControl"] == false);
     });
     check("Home Assistant commands are saved, drive the outputs, and are reported", [] {
         enableHomeAssistant(); startHomeAssistant();
@@ -249,6 +276,185 @@ void homeAssistantTests() {
         command("fan1_mode", "Temperature Curve"); // Already set: nothing is written
         assert(!LittleFS.exists(configPath) && globalVariables.settingsRevision == revision);
     });
+    check("in Hybrid, a fan command takes over until a print starts or printer control resumes", [] {
+        enableHomeAssistant(); startHomeAssistant();
+        command("fan1_mode", "Static Fan Speed");
+        command("fan1_static_speed", "30");
+        assertPWM(200, 30, 30);
+        const auto revision = globalVariables.settingsRevision;
+        command("fan1_percentage", "70");
+        assert(globalVariables.haOverride && printerConfig.haFanSpeed == 70);
+        assert(globalVariables.settingsRevision == revision); // Not a Settings change
+        assertPWM(200, 70, 70);
+        auto state = haState();
+        assert(state["override"] == "ON" && state["fan1"] == "ON" && state["fan1_speed"] == 70);
+        handleSensorData(); assert(response()["homeAssistantControl"] == true);
+        // Settings still change, for when the printer has the fans again.
+        command("fan1_static_speed", "20"); assertPWM(200, 70, 70);
+        command("fan1", "OFF"); assertPWM(200, 0, 0);
+        assert(haState()["fan1"] == "OFF");
+        command("fan1", "ON"); assertPWM(200, 100, 100);
+        // A print starting returns the fans to the printer.
+        printerVariables.online = true;
+        printState("PREPARE"); assertPWM(200, 100, 100);
+        printState("RUNNING");
+        assert(!globalVariables.haOverride); assertPWM(200, 20, 20);
+        mockMillis += 1000; homeAssistantLoop();
+        assert(haState()["override"] == "OFF");
+        // An override during a print lasts through it, a reconnect, and its end.
+        command("fan1_percentage", "55"); assertPWM(200, 55, 55);
+        printerCommunicationLost(); printerVariables.online = true;
+        printState("RUNNING"); printState("PAUSE"); printState("RUNNING"); printState("FINISH");
+        assert(globalVariables.haOverride); assertPWM(200, 55, 55);
+        command("resume", "PRESS");
+        assert(!globalVariables.haOverride); assertPWM(200, 20, 20);
+        // Turning a running fan on keeps its speed while taking over.
+        command("fan1", "ON"); assert(globalVariables.haOverride); assertPWM(200, 20, 20);
+        // Changing the mode ends the override, and a restart does too; Home Assistant's speeds are kept.
+        command("control_mode", "Printer"); assert(!globalVariables.haOverride);
+        command("control_mode", "Hybrid"); assertPWM(200, 20, 20);
+        command("fan1_percentage", "65"); reboot();
+        assert(!globalVariables.haOverride && printerConfig.controlMode == ControlMode::Hybrid);
+        assert(printerConfig.haFanSpeed == 65); assertPWM(200, 20, 20);
+    });
+    check("an override holds the fan Home Assistant did not set at its speed", [] {
+        enableHomeAssistant(); startHomeAssistant();
+        command("synchronized", "OFF");
+        command("fan2_mode", "Static Fan Speed");
+        command("fan2_static_speed", "40");
+        printerVariables.nozzletemp = 200; fanloop();
+        const int curveSpeed = globalVariables.fanSpeed;
+        command("fan2_percentage", "90");
+        assertPWM(200, curveSpeed, 90);
+        assertPWM(350, curveSpeed, 90); // The curve no longer drives Fan 1 either
+        command("resume", "PRESS"); assertPWM(200, curveSpeed, 40);
+        // While synchronized, Fan 1's speed drives both and Fan 2's entity is unavailable.
+        command("synchronized", "ON");
+        command("fan1_percentage", "35"); assertPWM(200, 35, 35);
+        const auto disk = savedConfig();
+        command("fan2_percentage", "80"); assertPWM(200, 35, 35);
+        assert(savedConfig() == disk);
+    });
+    check("HomeAssistant mode keeps the current speeds, ignores the printer, and outlasts restarts", [] {
+        enableHomeAssistant(); startHomeAssistant();
+        command("synchronized", "OFF");
+        command("fan1_mode", "Static Fan Speed"); command("fan1_static_speed", "30");
+        command("fan2_mode", "Static Fan Speed"); command("fan2_static_speed", "40");
+        assertPWM(200, 30, 40);
+        const auto revision = globalVariables.settingsRevision;
+        command("control_mode", "HomeAssistant");
+        assert(globalVariables.settingsRevision == revision + 1 && !globalVariables.haOverride);
+        assert(printerConfig.haFanSpeed == 30 && printerConfig.haFanSpeed2 == 40);
+        auto state = haState();
+        assert(state["control_mode"] == "HomeAssistant" && state["override"] == "OFF");
+        command("fan2", "OFF"); assertPWM(200, 30, 0);
+        command("fan2", "ON"); assertPWM(200, 30, 100);
+        command("fan2_percentage", "45"); assertPWM(200, 30, 45);
+        command("fan1_static_speed", "25");
+        command("fan1_post_print", "ON");
+        finishPrint(); assertPWM(200, 30, 45);
+        command("resume", "PRESS"); assertPWM(200, 30, 45);
+        reboot();
+        assert(printerConfig.controlMode == ControlMode::HomeAssistant); assertPWM(200, 30, 45);
+        handleGetOptions(); assert(response()["controlMode"] == "homeassistant");
+        // Turning off the connection returns the fans to the printer.
+        assert(options({{"haEnabled","off"},{"staticfan","on"}}) == 200); assertPWM(200, 25, 40);
+        handleSensorData(); assert(response()["homeAssistantControl"] == false);
+        assert(options({{"haEnabled","on"},{"staticfan","on"},{"controlMode","homeassistant"}}) == 200);
+        assertPWM(200, 25, 40);
+        assert(printerConfig.haFanSpeed == 25 && printerConfig.haFanSpeed2 == 40);
+    });
+    check("Printer mode makes the fan entities unavailable and ignores their commands", [] {
+        enableHomeAssistant(); startHomeAssistant();
+        command("fan1_mode", "Static Fan Speed"); command("fan1_static_speed", "30");
+        command("fan1_percentage", "80"); assertPWM(200, 80, 80);
+        command("control_mode", "Printer");
+        assert(!globalVariables.haOverride); assertPWM(200, 30, 30);
+        assert(availability("control") == "offline" && haState()["control_mode"] == "Printer");
+        const auto disk = savedConfig();
+        for (const auto &[key, value] : std::vector<std::pair<std::string,std::string>>{
+            {"fan1_percentage","90"}, {"fan1","OFF"}, {"resume","PRESS"}}) {
+            command(key, value);
+            assert(savedConfig() == disk && !globalVariables.haOverride);
+            assertPWM(200, 30, 30);
+        }
+        command("control_mode", "Hybrid");
+        assert(availability("control") == "online");
+    });
+    check("the Settings page sets the control mode and reports when Home Assistant has the fans", [] {
+        enableHomeAssistant({{"staticfan","on"},{"staticfanspeed","33"}});
+        handleGetOptions(); assert(response()["controlMode"] == "hybrid");
+        const auto revision = globalVariables.settingsRevision;
+        assert(options({{"controlMode","homeassistant"}}) == 200);
+        assert(printerConfig.controlMode == ControlMode::HomeAssistant && printerConfig.haFanSpeed == 33);
+        assert(globalVariables.settingsRevision == revision + 1);
+        handleSensorData(); assert(response()["homeAssistantControl"] == true);
+        const auto disk = savedConfig();
+        for (const char *bad : {"turbo", "HomeAssistant", ""}) {
+            assert(options({{"controlMode",bad}}) == 400);
+            assert(savedConfig() == disk && printerConfig.controlMode == ControlMode::HomeAssistant);
+        }
+        assert(options({{"controlMode","printer"}}) == 200);
+        reboot(); assert(printerConfig.controlMode == ControlMode::Printer);
+        // Older settings files, and invalid modes, load as Hybrid.
+        putConfig(legacyConfig); reboot();
+        assert(printerConfig.controlMode == ControlMode::Hybrid && printerConfig.haFanSpeed == 0);
+        JsonDocument json; deserializeJson(json, legacyConfig);
+        json["controlMode"] = "turbo"; json["haFanSpeed"] = 250;
+        std::string payload; serializeJson(json, payload); putConfig(payload); reboot();
+        assert(printerConfig.controlMode == ControlMode::Hybrid && printerConfig.haFanSpeed == 100);
+    });
+    check("Restart from Home Assistant marks the entities unavailable, then restarts", [] {
+        enableHomeAssistant(); startHomeAssistant();
+        haMqtt.published.clear();
+        haMqtt.deliver(haBase + "/set/restart", "PRESS");
+        assert(ESP.restarts == 0); // Not from inside the message callback
+        homeAssistantLoop();
+        assert(ESP.restarts == 1 && !haMqtt.connected());
+        assert(haMqtt.published.size() == 1 && haMqtt.published[0].topic == haBase + "/status");
+        assert(haMqtt.published[0].payload == "offline" && haMqtt.published[0].retained);
+    });
+    check("the printer error sensor reports fault stages and Fatal or Serious HMS codes", [] {
+        enableHomeAssistant(); startHomeAssistant();
+        printerVariables.online = true;
+        auto stateAfter = [](const char *json) {
+            report(json);
+            mockMillis += 1000; homeAssistantLoop();
+            return haState();
+        };
+        auto state = stateAfter(R"({"print":{"hms":[{"attr":50336256,"code":196609},{"attr":50332160,"code":65537},{"attr":1,"code":0}]}})");
+        assert(state["printer_error"] == "ON" && state["hms_code"] == "HMS_0300_0200_0001_0001" && state["hms_severity"] == "Fatal");
+        state = stateAfter(R"({"print":{"nozzle_temper":200}})"); // A delta update keeps the list
+        assert(state["printer_error"] == "ON");
+        state = stateAfter(R"({"print":{"hms":[{"attr":117448704,"code":196609}]}})");
+        assert(state["printer_error"] == "OFF" && state["hms_code"] == "HMS_0700_2000_0003_0001" && state["hms_severity"] == "Common");
+        state = stateAfter(R"({"print":{"hms":[{"attr":50336256,"code":131073}]}})");
+        assert(state["printer_error"] == "ON" && state["hms_severity"] == "Serious");
+        state = stateAfter(R"({"print":{"hms":[]}})");
+        assert(state["printer_error"] == "OFF" && state["hms_code"].isNull() && state["hms_severity"].isNull());
+        for (int stage : {6, 17, 20, 21}) {
+            const std::string json = R"({"print":{"stg_cur":)" + std::to_string(stage) + "}}";
+            assert(stateAfter(json.c_str())["printer_error"] == "ON");
+            assert(stateAfter(R"({"print":{"stg_cur":0}})")["printer_error"] == "OFF");
+        }
+        report(R"({"print":{"stg_cur":6,"hms":[{"attr":50336256,"code":65537}]}})");
+        assert(printerError());
+        printerCommunicationLost();
+        mockMillis += 1000; homeAssistantLoop();
+        state = haState();
+        assert(state["printer_error"] == "OFF" && state["hms_code"].isNull() && !printerError());
+    });
+    check("Wi-Fi signal and memory are published at connect and then once a minute", [] {
+        enableHomeAssistant(); startHomeAssistant();
+        assert(lastPublished(haBase + "/diagnostics"));
+        haMqtt.published.clear();
+        mockMillis += 59999; homeAssistantLoop(); assert(!lastPublished(haBase + "/diagnostics"));
+        mockMillis += 1; homeAssistantLoop();
+        const JsonDocument diagnostics = haJson(haBase + "/diagnostics");
+        assert(diagnostics["rssi"] == -61 && diagnostics["free_memory"] == 98000 && diagnostics["largest_block"] == 45044);
+        handleDiag(); auto json = response();
+        assert(json["freeHeap"] == 98000 && json["maxAllocHeap"] == 45044);
+    });
     check("retries back off, Home Assistant restarts republish discovery, and broker changes reconnect", [] {
         enableHomeAssistant(); setupHomeAssistant();
         haMqtt.failureState = 4;
@@ -272,7 +478,7 @@ void homeAssistantTests() {
         haMqtt.deliver("homeassistant/status", "offline"); homeAssistantLoop();
         assert(discoveryCount() == 0);
         haMqtt.deliver("homeassistant/status", "online"); homeAssistantLoop();
-        assert(discoveryCount() == 19 && lastPublished(haBase + "/status")->payload == "online");
+        assert(discoveryCount() == haEntityCount && lastPublished(haBase + "/status")->payload == "online");
         assert(lastPublished(haBase + "/state") && lastPublished(haBase + "/fan2/availability"));
         // Changing the broker marks the entities unavailable on the old one first.
         haMqtt.published.clear();
@@ -324,7 +530,7 @@ void homeAssistantTests() {
         assert(options({{"controllerName","  Garage P1S  "}}) == 200);
         assert(std::string(printerConfig.controllerName) == "Garage P1S" && MDNS.hostname == "garage-p1s");
         homeAssistantLoop();
-        assert(haMqtt.connects == connects && discoveryCount() == 19 && discoveredDeviceName() == "Garage P1S");
+        assert(haMqtt.connects == connects && discoveryCount() == haEntityCount && discoveredDeviceName() == "Garage P1S");
         assert(lastPublished(haBase + "/status")->payload == "online");
         reboot(); assertCredentials();
         assert(std::string(printerConfig.controllerName) == "Garage P1S" && controllerHostname() == "garage-p1s");
@@ -352,7 +558,7 @@ void homeAssistantTests() {
         haMqtt.connectResult = true;
         assert(options({{"controllerName","Workshop A1"}}) == 200);
         homeAssistantLoop(); homeAssistantLoop();
-        assert(discoveryCount() == 19 && discoveredDeviceName() == "Workshop A1");
+        assert(discoveryCount() == haEntityCount && discoveredDeviceName() == "Workshop A1");
     });
     check("printer reconnects back off from 3 to 30 seconds and bound the TLS connect time", [] {
         mqttClient.isConnected = false;

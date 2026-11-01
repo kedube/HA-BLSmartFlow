@@ -55,10 +55,12 @@ struct SerialMock {
 struct ESPMock {
     int restarts = 0;
     void restart() { ++restarts; }
-    uint32_t getFreeHeap() { return 150000; }
-    uint32_t getMinFreeHeap() { return 90000; }
-    uint32_t getMaxAllocHeap() { return 65524; }
 } ESP;
+// Byte-addressable memory, as the diagnostics measure it.
+constexpr uint32_t MALLOC_CAP_8BIT = 1 << 2;
+inline size_t heap_caps_get_free_size(uint32_t caps) { return caps == MALLOC_CAP_8BIT ? 98000 : 0; }
+inline size_t heap_caps_get_minimum_free_size(uint32_t caps) { return caps == MALLOC_CAP_8BIT ? 61000 : 0; }
+inline size_t heap_caps_get_largest_free_block(uint32_t caps) { return caps == MALLOC_CAP_8BIT ? 45044 : 0; }
 enum esp_reset_reason_t { ESP_RST_UNKNOWN, ESP_RST_POWERON, ESP_RST_EXT, ESP_RST_SW, ESP_RST_PANIC, ESP_RST_INT_WDT,
     ESP_RST_TASK_WDT, ESP_RST_WDT, ESP_RST_DEEPSLEEP, ESP_RST_BROWNOUT, ESP_RST_SDIO };
 inline esp_reset_reason_t mockResetReason = ESP_RST_POWERON;

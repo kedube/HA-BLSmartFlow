@@ -6,6 +6,8 @@
 inline void printerCommunicationLost() {
     printerVariables.online = false;
     printerVariables.printWasRunning = false;
+    printerVariables.printStage = -1;
+    printerVariables.hmsCode = 0;
     for (auto &run : printerVariables.postPrint) run = PostPrintRun{};
 }
 
@@ -22,6 +24,10 @@ inline void startPostPrint(int fan, const PostPrintSettings &settings, uint32_t 
 inline bool recordPrintState(const char *state) {
     if (!state || !printerVariables.online) return false;
     if (strcmp(state, "RUNNING") == 0) {
+        // A new print hands the fans back to the printer after a Hybrid override. Unlike
+        // printWasRunning, this survives a reconnect, which does not start a print.
+        if (!printerVariables.printInProgress) globalVariables.haOverride = false;
+        printerVariables.printInProgress = true;
         printerVariables.printWasRunning = true;
         return true;
     }
@@ -29,6 +35,7 @@ inline bool recordPrintState(const char *state) {
         // PREPARE, PAUSE and unrelated reports neither trigger nor cancel a timer.
         return false;
     }
+    printerVariables.printInProgress = false;
     if (printerVariables.printWasRunning) {
         const uint32_t now = millis();
         startPostPrint(0, printerConfig.postPrint, now);

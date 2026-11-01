@@ -291,6 +291,16 @@
                 <label for="haPassword">Password</label>
                 <input type="password" id="haPassword" name="haPassword" maxlength="64" autocomplete="new-password">
                 <small>Fan controls and sensors appear in Home Assistant through MQTT Discovery, on a device named after the Controller Name in <a href="/wifi">Wi-Fi &amp; Printer Setup</a>. The connection is not encrypted, so give the controller its own broker account.</small>
+                <div class="detailSplitter">Fan Control</div>
+                <div class="input-inline-group">
+                  <label for="controlMode">Control Mode</label>
+                  <select id="controlMode" name="controlMode">
+                    <option value="hybrid" selected>Hybrid</option>
+                    <option value="homeassistant">Home Assistant</option>
+                    <option value="printer">Printer</option>
+                  </select>
+                </div>
+                <small id="controlModeHelp"></small>
               </fieldset>
             </div>
           </details>
@@ -413,6 +423,7 @@
     const printerFanLabels = { part: 'Part Cooling Fan', auxiliary: 'Auxiliary Fan', chamber: 'Chamber Fan', heatbreak: 'Hotend Fan' };
     let activeFollowSources = [null, null];
     let postPrintRemaining = [0, 0];
+    let homeAssistantControl = false;
     let sensorRequestActive = false;
     let diagRequestActive = false;
     let curves = [[], []];
@@ -428,6 +439,11 @@
     let settingsDirty = false;
     // The controller accepts changes only from its own pages, which send this header.
     const ownPageHeader = 'X-BLSmartFlow';
+    const controlModeHelp = {
+      hybrid: 'The fans follow these settings until Home Assistant sets a fan speed. Home Assistant then keeps the fans until the next print starts or you press Resume printer control there.',
+      homeassistant: 'The fans run at the speeds Home Assistant sets, whatever the printer is doing. They keep their current speeds until it sets new ones.',
+      printer: 'The fans always follow these settings. Home Assistant can still change the settings, but its fan controls are unavailable.'
+    };
     const haProblems = {
       3: 'the broker is unavailable. Retrying.',
       4: 'the broker rejected the username or password.',
@@ -498,8 +514,9 @@
       for (let fan = 0; fan < 2; ++fan) {
         const index = fansSynchronized ? 0 : fan;
         const remaining = postPrintRemaining[index];
-        $('fan' + (fan + 1) + 'Source').textContent = remaining > 0
-          ? 'Post Print: ' + remaining + 's' : (printerFanLabels[activeFollowSources[index]] || '');
+        // Home Assistant's speeds take priority over Post Print.
+        $('fan' + (fan + 1) + 'Source').textContent = homeAssistantControl ? 'Home Assistant'
+          : remaining > 0 ? 'Post Print: ' + remaining + 's' : (printerFanLabels[activeFollowSources[index]] || '');
       }
     }
 
@@ -523,6 +540,7 @@
     function renderHomeAssistant() {
       // Disabled while hidden, so its fields are neither validated nor sent and the saved values stay.
       $('haFields').hidden = $('haFields').disabled = !$('haEnabled').checked;
+      $('controlModeHelp').textContent = controlModeHelp[$('controlMode').value] || '';
     }
 
     function renderLoginStatus(protectedPages) {
@@ -637,6 +655,7 @@
         $('haEnabled').checked = config.haEnabled === true;
         $('haHost').value = config.haHost || '';
         $('haPort').value = config.haPort || 1883;
+        $('controlMode').value = controlModeHelp[config.controlMode] ? config.controlMode : 'hybrid';
         $('haUser').value = config.haUser || '';
         // The firmware never sends the saved password.
         $('haPassword').value = '';
@@ -865,12 +884,14 @@
         setSpin(1, sensor.speed);
         setSpin(2, speed2);
         postPrintRemaining = [sensor.postPrintRemaining || 0, sensor.postPrintRemaining2 || 0];
+        homeAssistantControl = sensor.homeAssistantControl === true;
         renderFanSources();
         renderHomeAssistantStatus(sensor.homeAssistant, sensor.homeAssistantState);
         renderStatusBar(sensor);
         checkSettingsRevision(sensor.settingsRevision);
       } catch (error) {
         postPrintRemaining = [0, 0];
+        homeAssistantControl = false;
         renderFanSources();
         renderStatusBar({});
         console.error('Unable to refresh fan speeds:', error);
@@ -962,6 +983,7 @@
       markSettingsChanged();
     });
     $('haEnabled').addEventListener('change', () => { renderHomeAssistant(); markSettingsChanged(); });
+    $('controlMode').addEventListener('change', () => { renderHomeAssistant(); markSettingsChanged(); });
     for (const suffix of ['', '2']) {
       $('postPrint' + suffix).addEventListener('change', markSettingsChanged);
       for (const [name, other] of [['staticfan', 'followPrinterFan'], ['followPrinterFan', 'staticfan']]) {

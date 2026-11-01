@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='blsmartflow-tests-') as work:
     for name in ['Arduino.h', 'WiFi.h', 'WiFiClient.h', 'FS.h', 'LittleFS.h',
                  'WebServer.h', 'ESPmDNS.h', 'Update.h', 'pgmspace.h',
                  'WiFiClientSecure.h', 'PubSubClient.h', 'Stream.h', 'ESP32SSDP.h',
-                 'DNSServer.h', 'WiFiUdp.h']:
+                 'DNSServer.h', 'WiFiUdp.h', 'esp_heap_caps.h']:
         (work / name).write_text('#include "arduino-stubs.h"\n')
     binary = work / 'firmware-tests'
     subprocess.run([

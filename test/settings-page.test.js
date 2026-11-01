@@ -614,6 +614,37 @@ test('Home Assistant settings load without the saved password and save explicit 
   assert.equal(page.get('haPassword').placeholder, '');
 });
 
+test('the control mode loads, explains each choice, and saves', async () => {
+  let page = await readyPage(haConfig);
+  assert.equal(page.get('controlMode').value, 'hybrid'); // Older firmware has no control mode
+  assert.match(page.get('controlModeHelp').textContent, /until the next print starts/);
+  page = await readyPage({ ...haConfig, controlMode: 'homeassistant' });
+  assert.equal(page.get('controlMode').value, 'homeassistant');
+  assert.match(page.get('controlModeHelp').textContent, /speeds Home Assistant sets/);
+  page.get('controlMode').value = 'printer';
+  page.trigger('controlMode', 'change');
+  assert.match(page.get('controlModeHelp').textContent, /always follow these settings/);
+  assert.match(page.get('settings-status').textContent, /unsaved/i);
+  page.context.submitOptions({ preventDefault() {} });
+  assert.equal(new URLSearchParams(page.requests[1].body).get('controlMode'), 'printer');
+});
+
+test('while Home Assistant has the fans, it replaces the source and Post Print labels', async () => {
+  const page = await readyPage({ ...separateConfig, followPrinterFan: true, printerFanSource: 'chamber' });
+  for (const control of [true, false]) {
+    page.context.fetchSensorData();
+    await page.respond('/sensorData', { temp: 20, speed: 55, speed2: 0, postPrintRemaining: 0, postPrintRemaining2: 90,
+      homeAssistantControl: control });
+    assert.equal(page.get('fan1Source').textContent, control ? 'Home Assistant' : 'Chamber Fan');
+    assert.equal(page.get('fan2Source').textContent, control ? 'Home Assistant' : 'Post Print: 90s');
+  }
+  page.context.fetchSensorData();
+  await page.respond('/sensorData', { temp: 20, speed: 55, speed2: 0, homeAssistantControl: true });
+  page.context.fetchSensorData();
+  await page.respond('/sensorData', {}, 500);
+  assert.equal(page.get('fan1Source').textContent, 'Chamber Fan'); // Failed telemetry drops the stale label
+});
+
 test('older firmware leaves Home Assistant off, and turning it off disables the broker fields', async () => {
   let page = await readyPage();
   assert.equal(page.get('haEnabled').checked, false);

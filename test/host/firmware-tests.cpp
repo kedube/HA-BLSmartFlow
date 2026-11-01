@@ -44,9 +44,9 @@ void reset() {
     haMqtt = PubSubClient(haClient);
     haMqtt.isConnected = false;
     haLastState = haNodeId = haBaseTopic = "";
-    haLastFan2Online = -1;
-    haConfigured = haAttempted = haDiscoveryPending = haStatePending = false;
-    haLastAttempt = haRetryMs = haLastStateCheck = 0;
+    haLastFan2Online = haLastControlOnline = -1;
+    haConfigured = haAttempted = haDiscoveryPending = haStatePending = haRestartPending = false;
+    haLastAttempt = haRetryMs = haLastStateCheck = haLastDiagnostics = 0;
     webServer.headers.clear();
     webServer.credentials = {};
     webServer.authenticationRequests = 0;

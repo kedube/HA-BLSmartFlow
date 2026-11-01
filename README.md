@@ -129,7 +129,7 @@ During the timer, its speed takes priority over the normal mode, and **Post Prin
 
 The controller can connect to your Home Assistant MQTT broker, such as the Mosquitto add-on with the MQTT integration. This is a second connection; the printer connection is unchanged. Under **Home Assistant** in Settings, switch on **Connect to MQTT Broker**, enter the broker host and port (usually 1883), add a username and password if the broker needs them, and save. The device appears under *Settings → Devices & services → MQTT* within a few seconds, named **BL Smart Flow+** unless you give it a **Controller Name** in **Wi-Fi & Printer Setup**. The line below the switch and the Home Assistant icon in the status bar show whether it is connected or why it is not, such as a rejected username or password or a broker that can't be reached. The connection is retried every 5 seconds at first, slowing to once a minute while the broker is unreachable. The **Controller Log**, under **Device Tools**, records each connection attempt and every command applied or ignored, in lines starting with `[HA]`.
 
-<img src="images/blsmartflow-home-assistant.png" width="380" alt="Home Assistant section of Settings, connected to the broker at homeassistant.local port 1883 with a saved password">
+<img src="images/blsmartflow-home-assistant.png" width="380" alt="Home Assistant section of Settings, connected to the broker at homeassistant.local port 1883 with a saved password, and Control Mode set to Hybrid">
 
 With more than one controller, give each a **Controller Name** in **Wi-Fi & Printer Setup**, under **Device Tools**, such as `Garage P1S`. It names the device in Home Assistant, whose entity names start with it, and sets the controller's address on your network: each run of characters other than letters and digits becomes one hyphen, so `Garage P1S` is at `http://garage-p1s.local/`. The field shows the address as you type. Saving a new name restarts the controller at that address, and it sends the name to Home Assistant when it reconnects, unless you renamed the device there; entity IDs created earlier keep their names. Without a name, the device is **BL Smart Flow+** at `http://blflow.local/`. Whatever their names, controllers never share entities, because IDs and topics use each controller's MAC address.
 
@@ -139,18 +139,36 @@ The connection is plain, unencrypted MQTT, so the broker password crosses your n
 
 | Entity | Type | Notes |
 | --- | --- | --- |
+| Fan 1, Fan 2 | Fan | On/off and speed. Shows the output whatever drives it; setting it works as the **Control mode** describes below. Unavailable in `Printer` mode |
+| Control mode | Select | `Printer`, `HomeAssistant`, or `Hybrid`, as on the BLLED controller; same as **Control Mode** in Settings |
+| Resume printer control | Button | Ends a Hybrid override now, instead of waiting for a print to start |
+| Home Assistant override | Binary sensor | On while a Hybrid override is in effect |
+| Printer error | Binary sensor | On while the printer reports a fault the BLLED controller shows in its error colour: filament runout, front cover removed, nozzle or bed temperature failure (print stages 6, 17, 20, and 21), or a Fatal or Serious HMS code. Its `hms_code` and `hms_severity` attributes give the most severe HMS code the printer is reporting, such as `HMS_0300_0200_0001_0001` and `Fatal`, or none. Off while the printer is disconnected |
 | Nozzle temperature | Sensor | Temperature used by the fan curves, °C |
 | Fan 1 speed, Fan 2 speed | Sensor | Current output, % |
 | Fan 1/2 Post Print remaining | Sensor | Seconds, or 0 when inactive |
 | Printer connection | Binary sensor | Diagnostic; on while the printer MQTT connection is up |
+| WiFi signal | Sensor | Diagnostic; dBm, updated every minute |
+| Free memory, Largest free memory block | Sensor | Diagnostic; bytes, the figures from **Runtime Status**, updated every minute |
 | Synchronize fans | Switch | Same as **Synchronize Fans** |
 | Fan 1/2 mode | Select | `Temperature Curve`, `Static Fan Speed`, or `Follow Printer Fan` |
 | Fan 1/2 static speed | Number | 0–100 %; used in `Static Fan Speed` mode |
 | Fan 1/2 printer fan | Select | Source for `Follow Printer Fan`; same labels as Settings |
 | Fan 1/2 Post Print | Switch | Same as **Post Print** |
 | Fan 1/2 Post Print duration, speed | Number | 1–86400 s and 0–100 % |
+| Restart | Button | Configuration; restarts the controller, like **Restart Controller** |
 
 Changes from Home Assistant follow the same rules as **Save** on the Settings page: each is checked, written to flash, then applied, and invalid values are ignored. Repeating the current value does not write to flash. While the fans are synchronized, Fan 1's entities control both outputs and Fan 2's controls are unavailable, keeping their settings for later; the Fan 2 speed sensor still reports the output. Curves are edited only in the **Fan Curves** section of Settings. An open Settings page reloads when Home Assistant changes a setting. If it has unsaved edits, it keeps them and warns that saving will replace the newer settings.
+
+##### Control Mode
+
+The **Control mode** entity, or **Control Mode** in the Home Assistant section of Settings, decides what the **Fan 1** and **Fan 2** entities do, as the mode does for the BLLED controller's light:
+
+- **Hybrid** *(default)*: the fans follow their settings until Home Assistant sets a fan's speed or turns it on or off. Home Assistant then has both fans: the one it didn't set stays at its current speed. They stay that way, through the end of a print and Post Print, until a new print starts, you press **Resume printer control**, you change the control mode, or the controller restarts.
+- **HomeAssistant**: the fans run at the speeds Home Assistant sets, whatever the printer is doing. Switching to this mode keeps the fans at their current speeds until Home Assistant sets new ones, and the controller keeps Home Assistant's speeds through a restart.
+- **Printer**: the fans always follow their settings, and the **Fan 1** and **Fan 2** entities are unavailable.
+
+The other entities change the settings in every mode, so they take effect when the printer has the fans again. Turning off **Connect to MQTT Broker** returns the fans to their settings in every mode. While Home Assistant sets the speeds, **Home Assistant** replaces the source or Post Print label under the fan indicators in Settings. Speeds from Home Assistant don't change the settings, so an open Settings page doesn't reload for them.
 
 Topics use `blsmartflow/<mac>`, where `<mac>` is the controller's lowercase MAC address without colons:
 
@@ -158,10 +176,12 @@ Topics use `blsmartflow/<mac>`, where `<mac>` is the controller's lowercase MAC 
 | --- | --- |
 | `blsmartflow/<mac>/status` | `online` or `offline`; retained, with `offline` as the last will |
 | `blsmartflow/<mac>/state` | Retained JSON with every entity's value, such as `fan1_speed` and `fan1_mode`; published within a second of a change |
-| `blsmartflow/<mac>/set/<field>` | Command for a control's `<field>`, such as `set/fan1_static_speed` with `42` or `set/synchronized` with `OFF` |
+| `blsmartflow/<mac>/set/<field>` | Command for a control's `<field>`, such as `set/fan1_static_speed` with `42`, `set/synchronized` with `OFF`, `set/fan1_percentage` with `60`, `set/fan2` with `OFF`, or `set/restart` with `PRESS` |
 | `blsmartflow/<mac>/fan2/availability` | `offline` while synchronized, otherwise `online` |
+| `blsmartflow/<mac>/control/availability` | `offline` in `Printer` mode, otherwise `online`; for the **Fan 1** and **Fan 2** entities |
+| `blsmartflow/<mac>/diagnostics` | Retained JSON with `rssi`, `free_memory`, and `largest_block`; published every minute |
 
-Discovery configs are retained under `homeassistant/<component>/blsmartflow_<mac>/<field>/config` and republished when Home Assistant sends `online` to `homeassistant/status`. `/getOptions` and `/submitOptions` use `controllerName` (up to 32 characters; empty for the defaults), `haEnabled`, `haHost`, `haPort`, `haUser`, and `haPassword`; `/getOptions` returns `haPasswordSet` instead of the password. `/getOptions` and `/sensorData` add `settingsRevision`, which increases when Settings change. `/sensorData` adds `homeAssistant` (`disabled`, `connecting`, `connected`, or `disconnected`) and `homeAssistantState`, the MQTT client's last connection state.
+Discovery configs are retained under `homeassistant/<component>/blsmartflow_<mac>/<field>/config` and republished when Home Assistant sends `online` to `homeassistant/status`. `/getOptions` and `/submitOptions` use `controllerName` (up to 32 characters; empty for the defaults), `haEnabled`, `haHost`, `haPort`, `haUser`, `haPassword`, and `controlMode` (`hybrid`, `homeassistant`, or `printer`); `/getOptions` returns `haPasswordSet` instead of the password. `/getOptions` and `/sensorData` add `settingsRevision`, which increases when Settings change. `/sensorData` adds `homeAssistant` (`disabled`, `connecting`, `connected`, or `disconnected`), `homeAssistantState`, the MQTT client's last connection state, and `homeAssistantControl`, which is `true` while Home Assistant sets the fan speeds.
 
 #### Web Page Login and Firmware Updates
 
@@ -187,7 +207,7 @@ The **Debug & Diagnostics** section of Settings holds the **Debugging**, **Debug
 
 <img src="images/blsmartflow-diagnostics.png" width="380" alt="Debug & Diagnostics section of Settings with the debugging switches, Wi-Fi radio settings, subsystem switches, and Runtime Status">
 
-**Runtime Status**, at the bottom of the section, refreshes every 5 seconds while the section is open. It shows the Wi-Fi network, signal, transmit power, and IP address; the printer connection, with the reports and bytes received in the last full minute and the age of the last report; Home Assistant; SSDP; free memory, the lowest since starting, and the largest free block; uptime; and why the controller last started (`power on`, `restart`, `crash`, `watchdog`, `brownout`, `reset pin`, or `deep sleep`). A brownout or watchdog reset points to the power supply or a hung task rather than the settings.
+**Runtime Status**, at the bottom of the section, refreshes every 5 seconds while the section is open. It shows the Wi-Fi network, signal, transmit power, and IP address; the printer connection, with the reports and bytes received in the last full minute and the age of the last report; Home Assistant; SSDP; free memory, the lowest since starting, and the largest free block, counting only memory that ordinary allocations can use; uptime; and why the controller last started (`power on`, `restart`, `crash`, `watchdog`, `brownout`, `reset pin`, or `deep sleep`). A brownout or watchdog reset points to the power supply or a hung task rather than the settings.
 
 `/getOptions` and `/submitOptions` use `wifiTxPower` (the radio's quarter-dBm steps: `78`, `68`, `60`, `52`, `44`, `34`, `20`, or `8`), `wifiSleep`, `printerConnection`, and `ssdpEnabled`. `/diag` returns the Runtime Status as JSON. `/sensorData` adds `rssi`, `printerConnection`, and `printerConnected` for the status bar.
 

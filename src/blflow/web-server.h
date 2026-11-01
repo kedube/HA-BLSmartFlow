@@ -192,6 +192,7 @@ void handleGetOptions(){
     doc["haPort"] = printerConfig.haPort;
     doc["haUser"] = printerConfig.haUser;
     doc["haPasswordSet"] = strlen(printerConfig.haPassword) > 0; // Never send the password itself
+    doc["controlMode"] = controlModeName(printerConfig.controlMode);
     doc["webUser"] = printerConfig.webUser;
     doc["webPasswordSet"] = strlen(printerConfig.webPassword) > 0;
     doc["settingsRevision"] = globalVariables.settingsRevision;
@@ -324,6 +325,14 @@ bool readHomeAssistantArguments(PrinterConfig &candidate, const PrinterConfig &c
     if (candidate.haEnabled && strlen(candidate.haHost) == 0) {
         error = "Enter the Home Assistant broker host";
         return false;
+    }
+    if (webServer.hasArg("controlMode")) {
+        ControlMode mode;
+        if (!readControlMode(webServer.arg("controlMode").c_str(), mode)) {
+            error = "Choose Hybrid, Home Assistant, or Printer control";
+            return false;
+        }
+        setControlMode(candidate, mode);
     }
     return true;
 }
@@ -627,6 +636,7 @@ void handleSensorData() {
     doc["settingsRevision"] = globalVariables.settingsRevision;
     doc["homeAssistant"] = homeAssistantStatus();
     doc["homeAssistantState"] = haMqtt.state();
+    doc["homeAssistantControl"] = homeAssistantControlsFans(); // Home Assistant is setting the speeds
     doc["rssi"] = WiFi.RSSI();
     doc["printerConnection"] = printerConfig.printerConnection;
     doc["printerConnected"] = mqttClient.connected();
@@ -661,9 +671,9 @@ void handleDiag() {
     doc["homeAssistant"] = homeAssistantStatus();
     doc["homeAssistantState"] = haMqtt.state();
     doc["ssdpEnabled"] = printerConfig.ssdpEnabled;
-    doc["freeHeap"] = ESP.getFreeHeap();
-    doc["minFreeHeap"] = ESP.getMinFreeHeap();
-    doc["maxAllocHeap"] = ESP.getMaxAllocHeap();
+    doc["freeHeap"] = freeMemory();
+    doc["minFreeHeap"] = minFreeMemory();
+    doc["maxAllocHeap"] = largestFreeBlock();
     doc["logBytes"] = LogSerial.total();
     String response;
     serializeJson(doc, response);
